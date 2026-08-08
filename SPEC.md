@@ -1,4 +1,4 @@
-# Tempo — Pomodoro Time-Tracking Dashboard (Design Spec)
+# Habitus — Pomodoro Time-Tracking Dashboard (Design Spec)
 
 Single self-contained `index.html` (all CSS+JS inline). Vanilla JS, no frameworks. Persists to `localStorage` under key `tempo.v1`. Must work opened as a local file.
 

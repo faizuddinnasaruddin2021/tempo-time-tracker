@@ -1,11 +1,11 @@
-# Tempo — architecture notes
+# Habitus — architecture notes
 
 Orientation for anyone (human or agent) picking this project up cold. Read this before
 editing `index.html`; it will save you from re-deriving the parts that aren't obvious.
 
 ## The shape of the thing
 
-**Tempo is one file.** `index.html` (~6,300 lines) holds the markup, the CSS and every line
+**Habitus is one file.** `index.html` (~6,900 lines) holds the markup, the CSS and every line
 of JavaScript in a single inline `<script>`. There is no build step, no bundler, no package
 manager, no framework. Open the file in a browser and it runs.
 
@@ -41,8 +41,9 @@ store = {
   axes:       [{ id, name }],              // grouping dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
-  habits:     [{ id, name, color, kind, target, unit, period }],   // see Habits below
+  habits:     [{ id, name, color, kind, target, unit, period, catId, trackTime }],  // see Habits
   habitLog:   { [habitId]: { 'YYYY-MM-DD': number } },
+  habitMinutes: { [habitId]: { 'YYYY-MM-DD': number } },   // hand-logged time, when tracked
   tasks:      [{ id, text, pomodoros, done }],
   settings:   { work, short, long, longEvery, dailyGoalMin, theme, reminderOn, … },
   timer:      { mode, running, startedAt, remainingMs, sessionStartedAt, catId, … },
@@ -133,10 +134,30 @@ A habit is a name, a `kind` (`check` / `count` / `duration`), a `target` and a `
 check, a count, or minutes. Zero is stored as *absence* — the key is deleted, so "never
 logged" and "logged a zero" are the same thing and the day strip has one meaning.
 
-**Habits are logged by hand and never read from sessions.** That's a deliberate decision,
-not a missing feature: a run you did without starting the timer still counts, and deriving
-the number from sessions would make the streak quietly lie. Nothing in this view calls
-`visibleSessions()`, and the lens doesn't apply to it.
+**Habits are hand-logged by default, and optionally fed by focus sessions.** A habit with
+no `catId` never reads sessions at all — a run you did without starting the timer still
+counts, which is why hand-logging stays the default rather than a fallback. Setting
+`catId` links it to a Focus category, and then:
+
+| Habit kind | What a linked session contributes |
+|---|---|
+| `duration` | Minutes count toward the target itself — a 40-minute session completes "exercise 30 min" |
+| `count` / `check` | Minutes feed the **time track** only; the count stays yours to log, because no amount of time tells you how many pages you read |
+
+Reads go through `entriesFor(habit)` / `minutesFor(habit)`, which fold session minutes into
+the stored log. **Writes go to `rawEntries()` / `rawMinutes()`.** Writing through the merged
+view would either vanish on the next render or double-count — `setValue()` subtracts what
+the sessions already contributed before storing the remainder, so re-typing the number on
+screen is idempotent.
+
+Two rules that are easy to break:
+
+- Habit code reads **raw `store.sessions`, not `visibleSessions()`** — the documented
+  exception to the lens rule. Hiding a category in the lens is a question about the session
+  views; it must not quietly rewrite a habit's streak.
+- Anything computing over habits must use the merged view. `habitObservations()` originally
+  took `store.habitLog` and announced "nothing logged yet" over a day a focus session had
+  already completed.
 
 Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 
@@ -153,6 +174,9 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitBestStreak(habit, entries, today)` | The longest run ever, walked from the first logged day |
 | `habitDaysSinceLog(entries, today)` | Days since the last entry; `null` for never — a different message |
 | `habitObservations(habits, log, today, limit)` | Scored plain-language findings, worst first |
+| `sessionMinutesByDay(sessions, catId)` | Minutes per day in one category; splits at midnight like `bucketByHour` |
+| `habitMergedEntries(habit, manual, sessionMinutes)` | The read view: hand-logged plus linked focus minutes |
+| `habitTimeEntries(habit, manualMinutes, sessionMinutes, merged)` | The time track for habits that count something else |
 
 The 14-day strip on each row is also the day picker: clicking a square points that row's
 stepper at that day (`ui.habits.editingDay`, deliberately not persisted). Backfilling is

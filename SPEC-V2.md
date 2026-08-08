@@ -1,4 +1,4 @@
-# Tempo v2 — Feature Additions (Design Spec)
+# Habitus v2 — Feature Additions (Design Spec)
 
 Extend the existing `index.html` (do NOT rewrite it; edit incrementally, keep all v1 behavior). Keep the same visual language: dark, `#12151D` cards, Fraunces display numerals, Inter UI, category-color accents, 160ms transitions. Bump storage: keep key `tempo.v1` but add new fields with safe defaults when missing (migration on load).
 

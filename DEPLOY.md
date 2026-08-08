@@ -1,4 +1,4 @@
-# Deploying Tempo
+# Deploying Habitus
 
 The app is a single static file, so "deploying" means putting `index.html` somewhere with
 an HTTPS URL. Two routes below — GitHub Pages is the one this repo is set up for.

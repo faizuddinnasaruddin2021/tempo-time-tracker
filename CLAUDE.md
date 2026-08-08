@@ -1,7 +1,8 @@
-# Tempo
+# Habitus
 
-A habit tracker and pomodoro timer. **The whole application is `index.html`** — markup, CSS
-and JS in one file, no build step, no framework, no package manager.
+A habit tracker and pomodoro timer (the name is habit + focus). **The whole application is
+`index.html`** — markup, CSS and JS in one file, no build step, no framework, no package
+manager. The `localStorage` key is still `tempo.v1` from the app's earlier name; leave it.
 
 **Read [ARCHITECTURE.md](ARCHITECTURE.md) before editing.** It covers the data model, the
 habits track, the grouping-axis/lens system, where things live in the file, and the
@@ -15,8 +16,9 @@ The things most likely to trip you up:
 2. **Don't split the file or add a dependency.** Single-file is the deployment story.
 3. **Run `node test.mjs`** after touching the heatmap, the habit math, or adding any
    aggregation logic.
-4. **Habits are their own track.** They're hand-logged into `store.habitLog` and never
-   derived from sessions — don't "helpfully" wire them to the timer.
+4. **Read habits through `entriesFor(habit)` / `minutesFor(habit)`, write through
+   `rawEntries()` / `rawMinutes()`.** A habit linked to a category folds in focus-session
+   minutes on read; writing through the merged view double-counts.
 
 Serve it locally with `python3 -m http.server 8765` — Google sign-in and some browser APIs
 don't work from `file://`.

@@ -60,10 +60,12 @@ const hsrc = html.match(/\/\/ BEGIN habitMath.*\n([\s\S]*?)\/\/ END habitMath/);
 assert.ok(hsrc, 'habitMath markers not found in index.html');
 const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
         habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
-        habitBestStreak, habitDaysSinceLog, habitObservations } =
+        habitBestStreak, habitDaysSinceLog, habitObservations,
+        sessionMinutesByDay, habitMergedEntries, habitTimeEntries } =
   new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
     habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
-    habitBestStreak, habitDaysSinceLog, habitObservations };`)();
+    habitBestStreak, habitDaysSinceLog, habitObservations,
+    sessionMinutesByDay, habitMergedEntries, habitTimeEntries };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -224,4 +226,50 @@ assert.equal(many.length, 2);
 assert.deepEqual(many.map(o => o.habitId), ['Gym', 'Read'], 'dormant outranks slipping');
 assert.ok(many[0].score > many[1].score);
 
-console.log('habitMath: 23 checks passed');
+// ---- Linking habits to focus sessions -----------------------------------------------
+const ms = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
+
+// 21. Only the linked category counts, and an unlinked habit gets nothing
+const feed = [
+  { catId: 'deep', start: ms(2026, 8, 8, 9), end: ms(2026, 8, 8, 9, 50) },
+  { catId: 'deep', start: ms(2026, 8, 8, 14), end: ms(2026, 8, 8, 14, 30) },
+  { catId: 'admin', start: ms(2026, 8, 8, 16), end: ms(2026, 8, 8, 17) },
+];
+assert.deepEqual(sessionMinutesByDay(feed, 'deep'), { '2026-08-08': 80 });
+assert.deepEqual(sessionMinutesByDay(feed, 'admin'), { '2026-08-08': 60 });
+assert.deepEqual(sessionMinutesByDay(feed, ''), {}, 'no link, no minutes');
+assert.deepEqual(sessionMinutesByDay([], 'deep'), {});
+
+// 22. A session running past midnight bills each day its own minutes
+const overnight = sessionMinutesByDay(
+  [{ catId: 'deep', start: ms(2026, 8, 8, 23, 30), end: ms(2026, 8, 9, 0, 45) }], 'deep');
+assert.deepEqual(overnight, { '2026-08-08': 30, '2026-08-09': 45 });
+assert.equal(Object.values(overnight).reduce((a, v) => a + v, 0), 75, 'no minutes invented or lost');
+
+// 23. Linked minutes count toward the target only for a habit that measures minutes —
+//     a "read 10 pages" habit can't infer pages from time
+const exercise = { id: 'x', kind: 'duration', target: 30, period: 'day', catId: 'deep' };
+const read = { id: 'r', kind: 'count', target: 10, period: 'day', catId: 'deep' };
+const focusMins = { '2026-08-08': 80, '2026-08-07': 20 };
+assert.deepEqual(habitMergedEntries(exercise, { '2026-08-08': 10 }, focusMins),
+  { '2026-08-08': 90, '2026-08-07': 20 }, 'hand-logged minutes and focus minutes add up');
+assert.deepEqual(habitMergedEntries(read, { '2026-08-08': 4 }, focusMins), { '2026-08-08': 4 },
+  'pages are untouched by time');
+assert.deepEqual(habitMergedEntries({ ...exercise, catId: '' }, { '2026-08-08': 10 }, focusMins),
+  { '2026-08-08': 10 }, 'unlinked stays hand-logged');
+
+// 24. The time track: minutes for habits that count something else
+assert.deepEqual(habitTimeEntries(read, { '2026-08-06': 15 }, focusMins, {}),
+  { '2026-08-06': 15, '2026-08-08': 80, '2026-08-07': 20 });
+assert.deepEqual(habitTimeEntries(exercise, {}, focusMins, { '2026-08-08': 90 }),
+  { '2026-08-08': 90 }, 'a duration habit is already its own time track');
+assert.deepEqual(habitTimeEntries({ id: 'p', kind: 'check', target: 1, period: 'day' }, {}, {}, {}),
+  {}, 'no link and no time tracking means no time card at all');
+
+// 25. Habit maths reads the merged view, so a linked focus session completes the habit
+assert.equal(habitProgress(exercise, habitMergedEntries(exercise, {}, focusMins), day(2026, 8, 8)).complete,
+  true, '80 focus minutes clears a 30-minute target with nothing hand-logged');
+assert.equal(habitStreak(exercise, habitMergedEntries(exercise, {}, focusMins), day(2026, 8, 8)), 1,
+  'and the streak counts it');
+
+console.log('habitMath: 25 checks passed');

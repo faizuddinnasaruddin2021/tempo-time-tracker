@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Tempo — Pomodoro Timer</title>
+  <title>Habitus — Habits &amp; Focus</title>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -2053,6 +2053,17 @@
       .habit-controls { justify-content: flex-end; }
     }
 
+    .focus-habit-link {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: -12px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .focus-habit-link:empty { display: none; }
+
     /* ===== HABIT SUMMARY ===== */
     .habit-summary-grid {
       display: grid;
@@ -2110,7 +2121,7 @@
     /* Name | 30-day bar | streak | total | trend — collapses to two columns on narrow screens */
     .habit-stat-row {
       display: grid;
-      grid-template-columns: minmax(90px, 1.4fr) 2fr repeat(3, minmax(64px, 0.8fr));
+      grid-template-columns: minmax(90px, 1.3fr) 1.8fr repeat(4, minmax(58px, 0.7fr));
       align-items: center;
       gap: 12px;
       padding: 12px 0;
@@ -2377,7 +2388,7 @@
 <body>
   <!-- Top Bar -->
   <div class="top-bar">
-    <div class="wordmark">tempo<span class="period">.</span></div>
+    <div class="wordmark">habitus<span class="period">.</span></div>
     <div style="display: flex; align-items: center; gap: 24px;">
       <div class="nav">
         <button class="nav-pill active" data-view="habits">Habits</button>
@@ -2458,6 +2469,7 @@
           </div>
 
           <div class="category-selector" id="categorySelector"></div>
+          <div class="focus-habit-link" id="focusHabitLink"></div>
 
           <div class="tasks-card">
             <div class="tasks-title">What are you working on?</div>
@@ -2745,6 +2757,17 @@
             <option value="week">Week</option>
           </select>
         </div>
+        <div class="form-group">
+          <label class="form-label">Link to a Focus category</label>
+          <select class="form-select" id="habitCategory"></select>
+          <div class="insights-note" id="habitCategoryHint" style="margin: 8px 0 0;"></div>
+        </div>
+        <div class="form-group" id="habitTrackTimeGroup">
+          <label class="form-label" style="display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: 0;">
+            <input type="checkbox" id="habitTrackTime">
+            Also track time spent on this habit
+          </label>
+        </div>
         <div class="modal-actions">
           <button class="btn-ghost" id="habitModalCancelBtn">Cancel</button>
           <button class="btn-primary" id="habitModalSaveBtn">Save</button>
@@ -2945,6 +2968,8 @@
 
   <script>
     // ===== INITIALIZATION & STORAGE =====
+    // Still 'tempo.v1' after the rename to Habitus: this key *is* everyone's saved data.
+    // Renaming it would orphan every existing log behind a name change nobody asked about.
     const STORAGE_KEY = 'tempo.v1';
     const DEFAULT_CATEGORIES = [
       { id: 'deep-work', name: 'Deep Work', color: '#7C6FF7' },
@@ -2973,6 +2998,7 @@
       // still counts, and pretending otherwise would make the streak lie.
       habits: DEFAULT_HABITS,
       habitLog: {},            // { [habitId]: { 'YYYY-MM-DD': number } }
+      habitMinutes: {},        // hand-logged time, same shape — only for habits that count something else
       tasks: [],
       settings: {
         work: 25,
@@ -3191,6 +3217,55 @@
 
     const HABIT_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+    // Minutes logged per day in one category, for habits linked to it. Walks day boundaries
+    // like bucketByHour rather than dividing durations, so a session running past midnight
+    // bills each side to its own day and no minute is invented or lost.
+    function sessionMinutesByDay(sessions, catId) {
+      const out = {};
+      if (!catId) return out;
+      sessions.forEach(s => {
+        if (s.catId !== catId) return;
+        let cursor = new Date(s.start);
+        cursor.setHours(0, 0, 0, 0);
+        while (cursor.getTime() < s.end) {
+          const next = new Date(cursor);
+          next.setDate(next.getDate() + 1);
+          next.setHours(0, 0, 0, 0);
+          const overlap = Math.min(s.end, next.getTime()) - Math.max(s.start, cursor.getTime());
+          if (overlap > 0) {
+            const key = habitDayKey(cursor);
+            out[key] = (out[key] || 0) + overlap / 60000;
+          }
+          cursor = next;
+        }
+      });
+      return out;
+    }
+
+    // Focus sessions count toward a habit only when it measures minutes — a linked "read 10
+    // pages" habit can't infer pages from time, so its sessions feed the time track instead
+    // (habitTimeEntries) and its target stays hand-logged.
+    function habitMergedEntries(habit, manual, sessionMinutes) {
+      if (!habit.catId || habit.kind !== 'duration') return manual || {};
+      const out = { ...(manual || {}) };
+      Object.entries(sessionMinutes).forEach(([key, mins]) => {
+        out[key] = (out[key] || 0) + Math.round(mins);
+      });
+      return out;
+    }
+
+    // Minutes spent on a habit, whatever it counts. For a duration habit that's the habit
+    // itself; for the rest it's the optional time track, hand-logged and/or linked.
+    function habitTimeEntries(habit, manualMinutes, sessionMinutes, mergedEntries) {
+      if (habit.kind === 'duration') return mergedEntries || {};
+      if (!habit.trackTime && !habit.catId) return {};
+      const out = { ...(manualMinutes || {}) };
+      Object.entries(sessionMinutes).forEach(([key, mins]) => {
+        out[key] = (out[key] || 0) + Math.round(mins);
+      });
+      return out;
+    }
+
     // The longest run of completed periods ever, walked from the first logged day forward.
     function habitBestStreak(habit, entries, today) {
       const keys = Object.keys(entries || {}).sort();
@@ -3291,6 +3366,7 @@
 
     // Re-render everything that shows sessions (cheap enough to just do all of it)
     function refreshAll() {
+      ui.habits.render();   // a logged session can complete a linked habit
       ui.focus.updateStats();
       ui.focus.updateRecentSessions();
       ui.calendar.updateGrid();
@@ -3355,7 +3431,7 @@
         'Log time'
       );
       if (store.settings.notifications && 'Notification' in window && Notification.permission === 'granted' && document.hidden) {
-        try { new Notification('Tempo check-in', { body: `Still on ${cat?.name || 'task'}?` }); } catch (e) { /* ignore */ }
+        try { new Notification('Habitus check-in', { body: `Still on ${cat?.name || 'task'}?` }); } catch (e) { /* ignore */ }
       }
     }
 
@@ -3495,6 +3571,11 @@
     function normalizeStore() {
       if (!Array.isArray(store.habits)) store.habits = [];
       if (!store.habitLog || typeof store.habitLog !== 'object') store.habitLog = {};
+      if (!store.habitMinutes || typeof store.habitMinutes !== 'object') store.habitMinutes = {};
+      // A link to a deleted category would silently stop contributing; drop it instead
+      store.habits.forEach(h => {
+        if (h.catId && !store.categories.some(c => c.id === h.catId)) h.catId = '';
+      });
       if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Group' }];
       store.categories.forEach(c => {
         if (!c.groups) c.groups = {};
@@ -3853,7 +3934,7 @@
         const remaining = this.getRemaining();
         const duration = this.getDuration();
 
-        document.title = this.formatTime(remaining) + ' — Tempo';
+        document.title = this.formatTime(remaining) + ' — Habitus';
 
         // Update main-screen digits and progress ring
         const display = document.getElementById('timerDisplay');
@@ -4147,9 +4228,36 @@
         // patching up last night.
         editingDay: {},
 
-        entriesFor(habitId) {
+        // Writes go to the raw logs; reads go through entriesFor/minutesFor, which fold in
+        // whatever the linked category's focus sessions contributed.
+        rawEntries(habitId) {
           if (!store.habitLog[habitId]) store.habitLog[habitId] = {};
           return store.habitLog[habitId];
+        },
+
+        rawMinutes(habitId) {
+          if (!store.habitMinutes[habitId]) store.habitMinutes[habitId] = {};
+          return store.habitMinutes[habitId];
+        },
+
+        // Deliberately raw store.sessions, not visibleSessions(): hiding a category in the
+        // lens is a question about the session views, and it must not quietly rewrite a
+        // habit's streak. Recomputed per read — a personal log is far too small to cache.
+        sessionMinutes(habit) {
+          return sessionMinutesByDay(store.sessions, habit.catId);
+        },
+
+        entriesFor(habit) {
+          return habitMergedEntries(habit, this.rawEntries(habit.id), this.sessionMinutes(habit));
+        },
+
+        minutesFor(habit) {
+          return habitTimeEntries(habit, this.rawMinutes(habit.id), this.sessionMinutes(habit), this.entriesFor(habit));
+        },
+
+        // Does this habit show a time card at all?
+        tracksTime(habit) {
+          return habit.kind === 'duration' || habit.trackTime || !!habit.catId;
         },
 
         // A habit's own idea of "one tap" — minutes move in fives, counts in ones
@@ -4176,10 +4284,26 @@
 
         setValue(habit, dayKey, value) {
           const v = Math.max(0, Math.round(Number(value) || 0));
-          const entries = this.entriesFor(habit.id);
-          if (v) entries[dayKey] = v; else delete entries[dayKey];   // 0 isn't data, it's absence
+          // The control shows the day's *total*, focus minutes included, so store only the
+          // hand-logged remainder — otherwise re-typing the number on screen doubles it.
+          // A focus session can't be erased from here; that's what the Calendar is for.
+          const derived = Math.round(this.sessionMinutes(habit)[dayKey] || 0);
+          const manual = habit.kind === 'duration' && habit.catId ? Math.max(0, v - derived) : v;
+          const entries = this.rawEntries(habit.id);
+          if (manual) entries[dayKey] = manual; else delete entries[dayKey];   // 0 isn't data, it's absence
           saveStore();
           this.render();
+        },
+
+        setMinutes(habit, dayKey, value) {
+          const v = Math.max(0, Math.round(Number(value) || 0));
+          const derived = Math.round(this.sessionMinutes(habit)[dayKey] || 0);
+          const manual = habit.catId ? Math.max(0, v - derived) : v;
+          const minutes = this.rawMinutes(habit.id);
+          if (manual) minutes[dayKey] = manual; else delete minutes[dayKey];
+          saveStore();
+          this.render();
+          if (document.getElementById('habitDetailModal')?.classList.contains('open')) this.openDetail(habit);
         },
 
         // Everything known about one habit, opened by clicking its name anywhere.
@@ -4190,7 +4314,7 @@
           document.getElementById('habitDetailTitle').textContent = habit.name;
 
           const today = new Date();
-          const entries = this.entriesFor(habit.id);
+          const entries = this.entriesFor(habit);
           const current = habitCompletionRate(habit, entries, today, this.WINDOW);
           const previousEnd = new Date(today);
           previousEnd.setDate(previousEnd.getDate() - this.WINDOW);
@@ -4215,9 +4339,56 @@
             tile('30 Days', Math.round(current.rate * 100) + '%', `${current.done} of ${current.total} ${periodWord}s`),
             tile('Streak', String(habitStreak(habit, entries, today)), `${periodWord}s in a row`),
             tile('Best', String(habitBestStreak(habit, entries, today)), 'all time'),
-            tile('Total', String(habitTotal(entries)), (habit.kind === 'check' ? 'days done' : (habit.unit || 'logged'))),
+            habit.kind === 'duration'
+              ? tile('Total', formatMinutes(Math.round(habitTotal(entries))), 'all time')
+              : tile('Total', String(habitTotal(entries)), habit.kind === 'check' ? 'days done' : (habit.unit || 'logged')),
           );
           body.appendChild(grid);
+
+          const timeEntries = this.minutesFor(habit);
+          const tracksTime = this.tracksTime(habit);
+          if (tracksTime) {
+            const last30 = Object.entries(timeEntries)
+              .filter(([key]) => key >= habitDayKey(new Date(today.getTime() - (this.WINDOW - 1) * 86400000)))
+              .reduce((a, [, v]) => a + v, 0);
+            const timeGrid = document.createElement('div');
+            timeGrid.className = 'habit-summary-grid';
+            timeGrid.style.gridTemplateColumns = habit.kind === 'duration' ? '1fr' : 'repeat(2, 1fr)';
+            timeGrid.appendChild(tile('Time, 30 Days', formatMinutes(Math.round(last30)), 'hours on this habit'));
+            // For a minutes habit the all-time figure is already the Total tile above
+            if (habit.kind !== 'duration') {
+              timeGrid.appendChild(tile('Time, All Time', formatMinutes(Math.round(habitTotal(timeEntries))), 'since you started'));
+            }
+            body.appendChild(timeGrid);
+
+            // Hand-logged time lives here rather than on the row: the row's job is the
+            // habit itself, and a linked habit never needs this at all.
+            if (habit.kind !== 'duration' && !habit.catId) {
+              const dayKey = habitDayKey(today);
+              const value = Math.round(timeEntries[dayKey] || 0);
+              const controls = document.createElement('div');
+              controls.className = 'habit-controls';
+              controls.style.cssText = 'justify-content: flex-start; margin-bottom: 18px;';
+              const minus = Object.assign(document.createElement('button'), { className: 'habit-step-btn', textContent: '−' });
+              minus.addEventListener('click', () => this.setMinutes(habit, dayKey, value - 15));
+              const input = Object.assign(document.createElement('input'), {
+                type: 'number', className: 'habit-value', min: '0', value: String(value),
+              });
+              input.addEventListener('change', () => this.setMinutes(habit, dayKey, input.value));
+              controls.append(
+                Object.assign(document.createElement('span'), { className: 'insights-note', style: 'margin: 0 6px 0 0;', textContent: 'Time today' }),
+                minus, input,
+              );
+              [15, 30, 60].forEach(amount => {
+                const chip = Object.assign(document.createElement('button'), {
+                  className: 'habit-quick-add', textContent: '+' + amount + 'm',
+                });
+                chip.addEventListener('click', () => this.setMinutes(habit, dayKey, value + amount));
+                controls.appendChild(chip);
+              });
+              body.appendChild(controls);
+            }
+          }
 
           const delta = Math.round((current.rate - previous.rate) * 100);
           const idle = habitDaysSinceLog(entries, today);
@@ -4226,7 +4397,8 @@
               className: 'insights-note',
               style: 'margin: 0 0 6px;',
               textContent: `Target: ${habit.target}${unitLabel} per ${periodWord}.` +
-                (idle === null ? ' Nothing logged yet.' : idle === 0 ? ' Logged today.' : ` Last logged ${idle} day${idle === 1 ? '' : 's'} ago.`),
+                (idle === null ? ' Nothing logged yet.' : idle === 0 ? ' Logged today.' : ` Last logged ${idle} day${idle === 1 ? '' : 's'} ago.`) +
+                (habit.catId ? ` Linked to ${store.categories.find(c => c.id === habit.catId)?.name || 'a category'} in Focus.` : ''),
             }),
             Object.assign(document.createElement('div'), {
               className: 'insights-note',
@@ -4278,6 +4450,17 @@
           document.getElementById('habitTarget').value = habit?.target ?? 1;
           document.getElementById('habitUnit').value = habit?.unit || '';
           document.getElementById('habitPeriod').value = habit?.period || 'day';
+
+          // The category list is the Focus tab's own — linking here is what stops you
+          // logging the same half hour twice, once as a session and once as a habit.
+          const catSelect = document.getElementById('habitCategory');
+          catSelect.innerHTML = '';
+          catSelect.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: 'Not linked — log by hand' }));
+          store.categories.forEach(c => {
+            catSelect.appendChild(Object.assign(document.createElement('option'), { value: c.id, textContent: c.name }));
+          });
+          catSelect.value = habit?.catId || '';
+          document.getElementById('habitTrackTime').checked = !!habit?.trackTime;
           document.getElementById('habitModalDeleteBtn').style.display = isNew ? 'none' : '';
           this.syncEditorFields();
           modal.classList.add('open');
@@ -4292,6 +4475,18 @@
           const group = document.getElementById('habitTargetGroup');
           group.style.display = (kind === 'check' && period === 'day') ? 'none' : '';
           document.getElementById('habitUnit').style.display = kind === 'count' ? '' : 'none';
+
+          // A minutes habit is already a time track, and a linked one gets its time from
+          // the sessions — the checkbox only means anything for the remaining case.
+          const catId = document.getElementById('habitCategory').value;
+          document.getElementById('habitTrackTimeGroup').style.display =
+            (kind === 'duration' || catId) ? 'none' : '';
+
+          const cat = store.categories.find(c => c.id === catId);
+          document.getElementById('habitCategoryHint').textContent = !cat ? ''
+            : kind === 'duration'
+              ? `Focus sessions in ${cat.name} count toward this habit's target automatically.`
+              : `Time from ${cat.name} sessions is tracked here; the ${kind === 'count' ? 'count' : 'tick'} stays yours to log.`;
         },
 
         saveEditor() {
@@ -4307,6 +4502,8 @@
             period,
             target: hideTarget ? 1 : Math.max(1, parseInt(document.getElementById('habitTarget').value, 10) || 1),
             unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
+            catId: document.getElementById('habitCategory').value,
+            trackTime: document.getElementById('habitTrackTime').checked,
           };
           if (this.editingHabit) {
             Object.assign(this.editingHabit, fields);
@@ -4321,14 +4518,18 @@
         deleteHabit(habit) {
           const index = store.habits.indexOf(habit);
           const log = store.habitLog[habit.id];
+          const minutes = store.habitMinutes[habit.id];
           store.habits.splice(index, 1);
           delete store.habitLog[habit.id];
+          delete store.habitMinutes[habit.id];
           saveStore();
           document.getElementById('habitModal').classList.remove('open');
           this.render();
           showToast(`Deleted "${habit.name}"`, () => {
             store.habits.splice(index, 0, habit);
-            if (log) store.habitLog[habit.id] = log;   // the history is the expensive part to lose
+            // The history is the expensive part to lose — the habit itself is two fields
+            if (log) store.habitLog[habit.id] = log;
+            if (minutes) store.habitMinutes[habit.id] = minutes;
             saveStore();
             this.render();
           });
@@ -4349,7 +4550,7 @@
 
           let complete = 0;
           store.habits.forEach(habit => {
-            const entries = this.entriesFor(habit.id);
+            const entries = this.entriesFor(habit);
             const progress = habitProgress(habit, entries, today);
             if (progress.complete) complete++;
             list.appendChild(this.renderRow(habit, entries, progress, today));
@@ -4416,6 +4617,28 @@
             title: `${rate.done} of ${rate.total} ${habit.period === 'week' ? 'weeks' : 'days'} completed` +
               (delta ? `, ${delta > 0 ? 'up' : 'down'} ${Math.abs(delta)} points on the previous 30` : ''),
           }));
+
+          // Time is the second story on a habit that counts something else — kept to one
+          // chip, because the row's job is still "log the thing in one tap"
+          if (this.tracksTime(habit) && habit.kind !== 'duration') {
+            const todayMinutes = Math.round(this.minutesFor(habit)[habitDayKey(today)] || 0);
+            if (todayMinutes) {
+              const cat = store.categories.find(c => c.id === habit.catId);
+              head.appendChild(Object.assign(document.createElement('span'), {
+                className: 'habit-meta',
+                textContent: `⏱ ${formatMinutes(todayMinutes)}`,
+                title: cat ? `Today's time, including focus sessions in ${cat.name}` : "Today's logged time",
+              }));
+            }
+          }
+          if (habit.catId) {
+            const cat = store.categories.find(c => c.id === habit.catId);
+            const chip = Object.assign(document.createElement('span'), {
+              className: 'habit-meta', textContent: `↔ ${cat ? cat.name : 'linked'}`,
+              title: `Linked to the ${cat ? cat.name : ''} category in Focus`,
+            });
+            head.appendChild(chip);
+          }
           main.appendChild(head);
 
           const barEl = document.createElement('div');
@@ -4467,7 +4690,7 @@
           const weekdays = Array.from({ length: 7 }, () => ({ hit: 0, total: 0 }));
 
           store.habits.forEach(habit => {
-            const entries = this.entriesFor(habit.id);
+            const entries = this.entriesFor(habit);
             const rate = habitCompletionRate(habit, entries, today, this.WINDOW);
             done += rate.done;
             total += rate.total;
@@ -4491,7 +4714,11 @@
               anyLogged ? Math.round((topDay.slot.hit / topDay.slot.total) * 100) + '% of the time' : 'nothing logged yet'),
           );
 
-          const observations = habitObservations(store.habits, store.habitLog, today);
+          // Merged, not store.habitLog: a linked habit's focus minutes are real entries, and
+          // reading the raw log would announce "nothing logged yet" over a completed day.
+          const mergedLog = {};
+          store.habits.forEach(habit => { mergedLog[habit.id] = this.entriesFor(habit); });
+          const observations = habitObservations(store.habits, mergedLog, today);
           if (!observations.length) {
             notes.appendChild(Object.assign(document.createElement('div'), {
               className: 'insights-note',
@@ -4537,7 +4764,7 @@
           previousEnd.setDate(previousEnd.getDate() - this.WINDOW);   // the window before this one
 
           store.habits.forEach(habit => {
-            const entries = this.entriesFor(habit.id);
+            const entries = this.entriesFor(habit);
             table.appendChild(this.renderStatRow(habit, entries, today, previousEnd));
             grid.appendChild(this.renderGridRow(habit, entries, today));
           });
@@ -4550,7 +4777,7 @@
           HABIT_WEEKDAYS.forEach(d => head.appendChild(Object.assign(document.createElement('span'), { textContent: d })));
           weekdayBox.appendChild(head);
           store.habits.forEach(habit => {
-            weekdayBox.appendChild(this.renderWeekdayRow(habit, this.entriesFor(habit.id), today));
+            weekdayBox.appendChild(this.renderWeekdayRow(habit, this.entriesFor(habit), today));
           });
         },
 
@@ -4597,9 +4824,16 @@
 
           row.appendChild(cell('Streak', `${habitStreak(habit, entries, today)} 🔥`));
 
+          // A minutes habit's total *is* its time, so it's formatted as hours and the Time
+          // cell is dropped — the two columns were the same number in different units.
           const total = habitTotal(entries);
-          const unit = habit.kind === 'check' ? (habit.period === 'week' ? 'days' : 'days') : (habit.unit || '');
-          row.appendChild(cell('Total', `${total}${unit ? ' ' + unit : ''}`));
+          const unit = habit.kind === 'check' ? 'days' : (habit.unit || '');
+          row.appendChild(cell('Total', habit.kind === 'duration'
+            ? formatMinutes(Math.round(total)) : `${total}${unit ? ' ' + unit : ''}`));
+
+          if (habit.kind !== 'duration' && this.tracksTime(habit)) {
+            row.appendChild(cell('Time', formatMinutes(Math.round(habitTotal(this.minutesFor(habit))))));
+          }
 
           // Trend is percentage *points* against the previous 30 days — a rate compared to
           // a rate, so a habit with few periods can't look like a huge swing in raw counts.
@@ -4889,6 +5123,41 @@
           if (cat && timerCategoryName && timerCategoryDot) {
             timerCategoryName.textContent = cat.name;
             timerCategoryDot.style.backgroundColor = cat.color;
+          }
+          this.updateHabitLink(cat);
+        },
+
+        // Says, on the Focus tab itself, which habit this session will feed — and offers to
+        // set that up if nothing does. Without it the link is invisible from the side that
+        // generates the time.
+        updateHabitLink(cat) {
+          const line = document.getElementById('focusHabitLink');
+          if (!line) return;
+          line.innerHTML = '';
+          if (!cat) return;
+          const linked = store.habits.filter(h => h.catId === cat.id);
+
+          if (linked.length) {
+            // The habit names are the buttons; repeating them in the sentence read as a stutter
+            line.appendChild(Object.assign(document.createElement('span'), { textContent: 'Counts toward' }));
+            linked.forEach(h => {
+              const open = Object.assign(document.createElement('button'), {
+                className: 'habit-quick-add', textContent: h.name, title: `Open ${h.name}`,
+              });
+              open.addEventListener('click', () => ui.habits.openDetail(h));
+              line.appendChild(open);
+            });
+          } else if (store.habits.length) {
+            const link = Object.assign(document.createElement('button'), {
+              className: 'habit-quick-add', textContent: `Link ${cat.name} to a habit`,
+            });
+            link.addEventListener('click', () => {
+              document.querySelector('[data-view="habits"]')?.click();
+              ui.habits.openEditor(store.habits[0]);
+              document.getElementById('habitCategory').value = cat.id;
+              ui.habits.syncEditorFields();
+            });
+            line.appendChild(link);
           }
         },
 
@@ -6681,7 +6950,7 @@
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = 'tempo-data.json';
+              a.download = 'habitus-data.json';
               a.click();
               URL.revokeObjectURL(url);
             };
@@ -6708,7 +6977,7 @@
               const url = URL.createObjectURL(blob);
               const a = document.createElement('a');
               a.href = url;
-              a.download = 'tempo-data.csv';
+              a.download = 'habitus-data.csv';
               a.click();
               URL.revokeObjectURL(url);
             };
@@ -6831,6 +7100,7 @@
       });
       document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());
+      document.getElementById('habitCategory')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitModalSaveBtn')?.addEventListener('click', () => ui.habits.saveEditor());
       document.getElementById('habitModalDeleteBtn')?.addEventListener('click', () => {
         if (ui.habits.editingHabit) ui.habits.deleteHabit(ui.habits.editingHabit);

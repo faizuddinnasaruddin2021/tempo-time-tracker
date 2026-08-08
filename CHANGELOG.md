@@ -1,10 +1,29 @@
 # Changelog
 
-All notable changes to Tempo. Newest first.
+All notable changes to Habitus. Newest first.
 
 ## [Unreleased] — 2026-08-08
 
+### Changed
+- **Renamed to Habitus.** The app grew a habits track, and "Tempo" only described the timer
+  half. Your data is untouched: the `localStorage` key stays `tempo.v1`, because renaming it
+  would orphan every existing log behind a cosmetic change.
+
 ### Added
+- **Habits can be linked to a Focus category**, so a tracked hour isn't logged twice. Pick
+  the category in the habit editor, or hit "Link … to a habit" straight from the Focus tab,
+  which now says underneath the timer which habit the current category feeds.
+  - A **minutes** habit counts linked sessions toward its target — a 40-minute Exercise
+    session completes "exercise 30 min" on its own, streak and all.
+  - A **count** or **yes/no** habit gets the *time* from those sessions but keeps its count
+    hand-logged: no quantity of minutes tells you how many pages you read.
+  - Typing over a linked habit's number stores only the hand-logged remainder, so re-typing
+    the figure on screen doesn't quietly double it.
+- **Optional time tracking on any habit** ("Also track time spent"), with hours shown in the
+  detail view and in Insights — so "how long have I actually spent reading this year" has an
+  answer even for a habit that counts pages.
+
+### Added (earlier in this release)
 - **Habits, and they're now the landing view.** Timing work is a poor fit for anything you
   want to record *after* the fact, so habits are a separate, hand-logged track: mark a
   habit done, count 10 pages, log 30 minutes. Each one has a target per day or per week

@@ -1,4 +1,4 @@
-# Tempo — Cloud Sync Setup (free, ~10 minutes)
+# Habitus — Cloud Sync Setup (free, ~10 minutes)
 
 Sync uses Firebase (Google's free backend). Once set up, sign in with Google on any device and your sessions, tasks and settings stay in sync — phone included.
 
