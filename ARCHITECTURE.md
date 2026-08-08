@@ -41,7 +41,7 @@ store = {
   axes:       [{ id, name }],              // slicing dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
-  habits:     [{ id, name, color, kind, target, unit, period, catId, trackTime, group }],
+  habits:     [{ id, name, color, kind, target, unit, period, catId, group }],
   habitLog:   { [habitId]: { 'YYYY-MM-DD': number } },
   habitMinutes: { [habitId]: { 'YYYY-MM-DD': number } },   // hand-logged time, when tracked
   tasks:      [{ id, text, pomodoros, done }],
@@ -150,6 +150,11 @@ counts, which is why hand-logging stays the default rather than a fallback. Sett
 |---|---|
 | `duration` | Minutes count toward the target itself — a 40-minute session completes "exercise 30 min" |
 | `count` / `check` | Minutes feed the **time track** only; the count stays yours to log, because no amount of time tells you how many pages you read |
+
+**Every habit carries time**, whether or not it's linked — a minutes habit keeps it in its
+main number, everything else gets a separate track (`hasSeparateTime()`). This was an opt-in
+`trackTime` checkbox and that was a mistake: the feature was invisible until you found and
+ticked it, so it read as missing. Old stores may still have the field; nothing reads it.
 
 Reads go through `entriesFor(habit)` / `minutesFor(habit)`, which fold session minutes into
 the stored log. **Writes go to `rawEntries()` / `rawMinutes()`.** Writing through the merged

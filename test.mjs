@@ -265,8 +265,10 @@ assert.deepEqual(habitTimeEntries(read, { '2026-08-06': 15 }, focusMins, {}),
   { '2026-08-06': 15, '2026-08-08': 80, '2026-08-07': 20 });
 assert.deepEqual(habitTimeEntries(exercise, {}, focusMins, { '2026-08-08': 90 }),
   { '2026-08-08': 90 }, 'a duration habit is already its own time track');
-assert.deepEqual(habitTimeEntries({ id: 'p', kind: 'check', target: 1, period: 'day' }, {}, {}, {}),
-  {}, 'no link and no time tracking means no time card at all');
+assert.deepEqual(habitTimeEntries({ id: 'p', kind: 'check', target: 1, period: 'day' }, { '2026-08-08': 20 }, {}, {}),
+  { '2026-08-08': 20 }, 'every habit can carry time — it used to need a checkbox nobody found');
+assert.deepEqual(habitTimeEntries({ id: 'p', kind: 'check', target: 1, period: 'day' }, {}, {}, {}), {},
+  'but an untouched habit still has an empty track, not a zero');
 
 // 25. Habit maths reads the merged view, so a linked focus session completes the habit
 assert.equal(habitProgress(exercise, habitMergedEntries(exercise, {}, focusMins), day(2026, 8, 8)).complete,

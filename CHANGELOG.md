@@ -25,9 +25,9 @@ All notable changes to Habitus. Newest first.
 - **Groups are picked from a list** rather than retyped, with "＋ New group…" for a new one.
   Typing a name that already exists in another case joins the existing group instead of
   making a near-duplicate.
-- The "Also track time spent" option is no longer hidden on linked habits — it shows as
-  ticked and locked, with a note saying why, rather than looking like the feature vanished.
-  Manual time logging now works on linked habits too, topping up what the sessions covered.
+- **Time tracking is on for every habit** — there's no longer a checkbox to find and tick.
+  The ⏱ chip is on every row from the start; a minutes habit keeps its time in its own
+  number. Manual time also works on linked habits, topping up what the sessions covered.
 - **Habit groups.** Put habits under your own headings — Morning, Evening, whatever — by
   dragging a habit's handle onto another group, or by typing a name in the habit editor
   (which suggests the ones you already use). Each heading carries that day's completion and

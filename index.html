@@ -2932,13 +2932,6 @@
           <select class="form-select" id="habitCategory"></select>
           <div class="insights-note" id="habitCategoryHint" style="margin: 8px 0 0;"></div>
         </div>
-        <div class="form-group" id="habitTrackTimeGroup">
-          <label class="form-label" style="display: flex; align-items: center; gap: 10px; text-transform: none; letter-spacing: 0;">
-            <input type="checkbox" id="habitTrackTime">
-            Also track time spent on this habit
-          </label>
-          <div class="insights-note" id="habitTrackTimeHint" style="margin: 6px 0 0;"></div>
-        </div>
         <div class="modal-actions">
           <button class="btn-ghost" id="habitModalCancelBtn">Cancel</button>
           <button class="btn-primary" id="habitModalSaveBtn">Save</button>
@@ -3482,7 +3475,6 @@
     // itself; for the rest it's the optional time track, hand-logged and/or linked.
     function habitTimeEntries(habit, manualMinutes, sessionMinutes, mergedEntries) {
       if (habit.kind === 'duration') return mergedEntries || {};
-      if (!habit.trackTime && !habit.catId) return {};
       const out = { ...(manualMinutes || {}) };
       Object.entries(sessionMinutes).forEach(([key, mins]) => {
         out[key] = (out[key] || 0) + Math.round(mins);
@@ -4613,9 +4605,11 @@
           return habitTimeEntries(habit, this.rawMinutes(habit.id), this.sessionMinutes(habit), this.entriesFor(habit));
         },
 
-        // Does this habit show a time card at all?
-        tracksTime(habit) {
-          return habit.kind === 'duration' || habit.trackTime || !!habit.catId;
+        // Every habit can carry time; a minutes habit just keeps it in its main number
+        // rather than a second track. This used to be an opt-in checkbox, which meant the
+        // feature was invisible until you found and ticked it.
+        hasSeparateTime(habit) {
+          return habit.kind !== 'duration';
         },
 
         // A habit's own idea of "one tap" — minutes move in fives, counts in ones
@@ -4717,8 +4711,7 @@
           body.appendChild(grid);
 
           const timeEntries = this.minutesFor(habit);
-          const tracksTime = this.tracksTime(habit);
-          if (tracksTime) {
+          {   // every habit has a time card; a minutes habit's is its own number
             const last30 = Object.entries(timeEntries)
               .filter(([key]) => key >= habitDayKey(new Date(today.getTime() - (this.WINDOW - 1) * 86400000)))
               .reduce((a, [, v]) => a + v, 0);
@@ -4846,7 +4839,6 @@
           groupSelect.value = habit?.group || '';
           groupNew.value = '';
           groupNew.style.display = 'none';
-          document.getElementById('habitTrackTime').checked = !!habit?.trackTime;
           document.getElementById('habitModalDeleteBtn').style.display = isNew ? 'none' : '';
           this.syncEditorFields();
           modal.classList.add('open');
@@ -4873,16 +4865,7 @@
             groupNew.style.display = 'none';
           }
 
-          // Only a minutes habit has nothing to say here — its target *is* the time. A
-          // linked habit already collects time, so the box is ticked and disabled rather
-          // than hidden, which read as "this app can't track time any more".
           const catId = document.getElementById('habitCategory').value;
-          const trackBox = document.getElementById('habitTrackTime');
-          document.getElementById('habitTrackTimeGroup').style.display = kind === 'duration' ? 'none' : '';
-          trackBox.disabled = !!catId;
-          if (catId) trackBox.checked = true;
-          document.getElementById('habitTrackTimeHint').textContent = catId
-            ? 'Always on while this habit is linked to a Focus category.' : '';
 
           const cat = store.categories.find(c => c.id === catId);
           document.getElementById('habitCategoryHint').textContent = !cat ? ''
@@ -4905,7 +4888,6 @@
             target: hideTarget ? 1 : Math.max(1, parseInt(document.getElementById('habitTarget').value, 10) || 1),
             unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
             catId: document.getElementById('habitCategory').value,
-            trackTime: document.getElementById('habitTrackTime').checked,
             group: this.chosenGroup(),
           };
           if (this.editingHabit) {
@@ -5197,7 +5179,7 @@
 
           // Time is the second story on a habit that counts something else — kept to one
           // chip, because the row's job is still "log the thing in one tap"
-          if (this.tracksTime(habit) && habit.kind !== 'duration') {
+          if (this.hasSeparateTime(habit)) {
             const dayMinutes = Math.round(this.minutesFor(habit)[this.selectedDay] || 0);
             if (dayMinutes) {
               const cat = store.categories.find(c => c.id === habit.catId);
@@ -5476,7 +5458,7 @@
           row.appendChild(cell('Total', habit.kind === 'duration'
             ? formatMinutes(Math.round(total)) : `${total}${unit ? ' ' + unit : ''}`));
 
-          if (habit.kind !== 'duration' && this.tracksTime(habit)) {
+          if (this.hasSeparateTime(habit)) {
             row.appendChild(cell('Time', formatMinutes(Math.round(habitTotal(this.minutesFor(habit))))));
           }
 
@@ -5668,7 +5650,7 @@
 
           // Time, right here on the row. A minutes habit's stepper already is the time, so
           // this is for the habits that count something else.
-          if (this.tracksTime(habit) && habit.kind !== 'duration') {
+          if (this.hasSeparateTime(habit)) {
             const logged = Math.round(this.minutesFor(habit)[dayKey] || 0);
             const suggestion = this.suggestedMinutes(habit);
             const chip = Object.assign(document.createElement('button'), {
