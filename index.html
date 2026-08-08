@@ -2118,6 +2118,9 @@
     }
     .habit-quick-add:hover { color: var(--text-primary); border-color: var(--accent); }
     .habit-quick-add.fill { font-weight: 600; }
+    /* Time reads as a different kind of thing from the target chips next to it */
+    .habit-quick-add.habit-time-add { border-style: dashed; }
+    .habit-quick-add.habit-time-add:hover { border-style: solid; }
 
     .habit-step-btn {
       width: 32px;
@@ -2921,8 +2924,8 @@
         </div>
         <div class="form-group">
           <label class="form-label">Group</label>
-          <input type="text" class="form-input" id="habitGroup" placeholder="e.g. Morning" list="habitGroupOptions" autocomplete="off">
-          <datalist id="habitGroupOptions"></datalist>
+          <select class="form-select" id="habitGroup"></select>
+          <input type="text" class="form-input" id="habitGroupNew" placeholder="Name the new group" autocomplete="off" style="display: none; margin-top: 8px;">
         </div>
         <div class="form-group">
           <label class="form-label">Link to a Focus category</label>
@@ -2934,6 +2937,7 @@
             <input type="checkbox" id="habitTrackTime">
             Also track time spent on this habit
           </label>
+          <div class="insights-note" id="habitTrackTimeHint" style="margin: 6px 0 0;"></div>
         </div>
         <div class="modal-actions">
           <button class="btn-ghost" id="habitModalCancelBtn">Cancel</button>
@@ -3145,6 +3149,8 @@
       { id: 'exercise', name: 'Exercise', color: '#4ADE80' },
       { id: 'creative', name: 'Creative', color: '#F472B6' },
     ];
+
+    const NEW_GROUP = '__new-group__';   // sentinel option value, never a real group name
 
     const DEFAULT_HABITS = [
       { id: 'habit-exercise', name: 'Exercise', color: '#4ADE80', kind: 'duration', target: 30, unit: 'min', period: 'day' },
@@ -3385,6 +3391,21 @@
     }
 
     const HABIT_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    // What one day of a habit is worth. A weekly target spreads over the week, so clicking
+    // a single square shouldn't try to finish the whole week in one go.
+    function habitDayTarget(habit) {
+      const target = Math.max(1, habit.target || 1);
+      if (habit.period !== 'week') return target;
+      return habit.kind === 'check' ? 1 : Math.max(1, Math.round(target / 7));
+    }
+
+    // The most recent minutes logged before `beforeKey` — the number to offer as a one-tap
+    // repeat, because yesterday's session length is the best guess at today's.
+    function habitLastMinutes(entries, beforeKey) {
+      const keys = Object.keys(entries || {}).filter(k => k < beforeKey && entries[k] > 0).sort();
+      return keys.length ? Math.round(entries[keys[keys.length - 1]]) : null;
+    }
 
     // A group's numbers, pooled across its habits: how many of its periods were completed,
     // which habit is dragging it down, and which weekday it holds up best on. Pooling
@@ -4470,6 +4491,15 @@
           });
         },
 
+        // What the editor's group picker returns, resolving the "new group" case
+        chosenGroup() {
+          const choice = document.getElementById('habitGroup').value;
+          if (choice !== NEW_GROUP) return choice;
+          const typed = document.getElementById('habitGroupNew').value.trim();
+          // Match an existing name case-insensitively rather than making a near-duplicate
+          return this.groupNames().find(n => n.toLowerCase() === typed.toLowerCase()) ?? typed;
+        },
+
         // ---- Groups ---------------------------------------------------------------------
         // Group order follows the habit order, so dragging a habit somewhere new can also
         // move its whole group. '' is the ungrouped bucket and always sorts last.
@@ -4602,12 +4632,25 @@
             .filter(v => v > 0).sort((a, b) => a - b);
         },
 
-        // How strongly to tint one day's square. A weekly target spreads over seven days,
-        // so a weekly habit's day isn't judged against the whole week's number.
+        // How strongly to tint one day's square, judged against what a single day is worth
+        // rather than a whole week's target.
         dayAlpha(habit, value) {
           if (!value) return 0;
-          const perDay = habit.period === 'week' ? habit.target / 7 : habit.target;
-          return 0.35 + 0.65 * Math.min(1, value / Math.max(1, perDay));
+          return 0.35 + 0.65 * Math.min(1, value / habitDayTarget(habit));
+        },
+
+        // Clicking a square logs that day outright: a full day's worth if it's short, or
+        // clears it if it was already there. Anything finer is what the steppers are for.
+        toggleDay(habit, dayKey) {
+          this.selectedDay = dayKey;   // the controls follow the square you just touched
+          const value = this.entriesFor(habit)[dayKey] || 0;
+          const dayTarget = habitDayTarget(habit);
+          this.setValue(habit, dayKey, value >= dayTarget ? 0 : dayTarget);
+        },
+
+        // Yesterday's session length is the best guess at today's, so it's the chip on offer
+        suggestedMinutes(habit) {
+          return habitLastMinutes(this.minutesFor(habit), this.selectedDay) || 30;
         },
 
         setValue(habit, dayKey, value) {
@@ -4689,9 +4732,10 @@
             }
             body.appendChild(timeGrid);
 
-            // Hand-logged time lives here rather than on the row: the row's job is the
-            // habit itself, and a linked habit never needs this at all.
-            if (habit.kind !== 'duration' && !habit.catId) {
+            // The row has a one-tap chip; this is the same track with full control. Linked
+            // habits get it too — setMinutes stores only the hand-logged remainder, so you
+            // can top up a day the sessions only partly covered.
+            if (habit.kind !== 'duration') {
               const dayKey = habitDayKey(today);
               const value = Math.round(timeEntries[dayKey] || 0);
               const controls = document.createElement('div');
@@ -4788,15 +4832,20 @@
             catSelect.appendChild(Object.assign(document.createElement('option'), { value: c.id, textContent: c.name }));
           });
           catSelect.value = habit?.catId || '';
-          document.getElementById('habitGroup').value = habit?.group || '';
-          // A datalist so existing groups get reused rather than re-typed into near-misses.
-          // This field is also the only way to group on a touch device, where the drag
-          // handle has nothing to drag with.
-          const groupOptions = document.getElementById('habitGroupOptions');
-          groupOptions.innerHTML = '';
-          this.groupNames().forEach(name => {
-            if (name) groupOptions.appendChild(Object.assign(document.createElement('option'), { value: name }));
+          // A picker rather than a text field: retyping a group name is how you end up with
+          // "Morning" and "morning" as two groups. Also the only way to group on a touch
+          // device, where the drag handle has nothing to drag with.
+          const groupSelect = document.getElementById('habitGroup');
+          const groupNew = document.getElementById('habitGroupNew');
+          groupSelect.innerHTML = '';
+          groupSelect.appendChild(Object.assign(document.createElement('option'), { value: '', textContent: 'No group' }));
+          this.groupNames().filter(Boolean).forEach(name => {
+            groupSelect.appendChild(Object.assign(document.createElement('option'), { value: name, textContent: name }));
           });
+          groupSelect.appendChild(Object.assign(document.createElement('option'), { value: NEW_GROUP, textContent: '＋ New group…' }));
+          groupSelect.value = habit?.group || '';
+          groupNew.value = '';
+          groupNew.style.display = 'none';
           document.getElementById('habitTrackTime').checked = !!habit?.trackTime;
           document.getElementById('habitModalDeleteBtn').style.display = isNew ? 'none' : '';
           this.syncEditorFields();
@@ -4813,11 +4862,27 @@
           group.style.display = (kind === 'check' && period === 'day') ? 'none' : '';
           document.getElementById('habitUnit').style.display = kind === 'count' ? '' : 'none';
 
-          // A minutes habit is already a time track, and a linked one gets its time from
-          // the sessions — the checkbox only means anything for the remaining case.
+          // Typing a new group name only makes sense once you've asked for one
+          const groupSelect = document.getElementById('habitGroup');
+          const groupNew = document.getElementById('habitGroupNew');
+          const wantsNew = groupSelect.value === NEW_GROUP;
+          if (wantsNew && groupNew.style.display === 'none') {
+            groupNew.style.display = '';
+            groupNew.focus();
+          } else if (!wantsNew) {
+            groupNew.style.display = 'none';
+          }
+
+          // Only a minutes habit has nothing to say here — its target *is* the time. A
+          // linked habit already collects time, so the box is ticked and disabled rather
+          // than hidden, which read as "this app can't track time any more".
           const catId = document.getElementById('habitCategory').value;
-          document.getElementById('habitTrackTimeGroup').style.display =
-            (kind === 'duration' || catId) ? 'none' : '';
+          const trackBox = document.getElementById('habitTrackTime');
+          document.getElementById('habitTrackTimeGroup').style.display = kind === 'duration' ? 'none' : '';
+          trackBox.disabled = !!catId;
+          if (catId) trackBox.checked = true;
+          document.getElementById('habitTrackTimeHint').textContent = catId
+            ? 'Always on while this habit is linked to a Focus category.' : '';
 
           const cat = store.categories.find(c => c.id === catId);
           document.getElementById('habitCategoryHint').textContent = !cat ? ''
@@ -4841,7 +4906,7 @@
             unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
             catId: document.getElementById('habitCategory').value,
             trackTime: document.getElementById('habitTrackTime').checked,
-            group: document.getElementById('habitGroup').value.trim(),
+            group: this.chosenGroup(),
           };
           if (this.editingHabit) {
             Object.assign(this.editingHabit, fields);
@@ -5545,7 +5610,18 @@
             if (key > todayKey) {
               cell.disabled = true;   // nothing to log on a day that hasn't happened
             } else {
-              cell.addEventListener('click', () => this.selectDay(key));
+              // Click completes that day, double-click opens the habit. The single-click
+              // action waits out the double-click window, or a double-click would toggle
+              // the day on its way to opening the detail.
+              let pending = null;
+              cell.addEventListener('click', () => {
+                clearTimeout(pending);
+                pending = setTimeout(() => this.toggleDay(habit, key), 220);
+              });
+              cell.addEventListener('dblclick', () => {
+                clearTimeout(pending);
+                this.openDetail(habit);
+              });
             }
             return cell;
           });
@@ -5588,6 +5664,24 @@
               chip.addEventListener('click', () => this.setValue(habit, dayKey, value + amount));
               wrap.appendChild(chip);
             });
+          }
+
+          // Time, right here on the row. A minutes habit's stepper already is the time, so
+          // this is for the habits that count something else.
+          if (this.tracksTime(habit) && habit.kind !== 'duration') {
+            const logged = Math.round(this.minutesFor(habit)[dayKey] || 0);
+            const suggestion = this.suggestedMinutes(habit);
+            const chip = Object.assign(document.createElement('button'), {
+              className: 'habit-quick-add habit-time-add',
+              textContent: logged ? `⏱ ${formatMinutes(logged)}` : `⏱ +${suggestion}m`,
+              title: logged
+                ? `${formatMinutes(logged)} logged — click to add ${suggestion} more`
+                : `Log ${suggestion} minutes — the last amount you logged on this habit`,
+            });
+            // No double-click handler here: a click that mutates can't also be half of a
+            // double-click without logging twice on the way. Open the detail from the name.
+            chip.addEventListener('click', () => this.setMinutes(habit, dayKey, logged + suggestion));
+            wrap.appendChild(chip);
           }
 
           return wrap;
@@ -7717,12 +7811,15 @@
       document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitCategory')?.addEventListener('change', () => ui.habits.syncEditorFields());
+      document.getElementById('habitGroup')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitModalSaveBtn')?.addEventListener('click', () => ui.habits.saveEditor());
       document.getElementById('habitModalDeleteBtn')?.addEventListener('click', () => {
         if (ui.habits.editingHabit) ui.habits.deleteHabit(ui.habits.editingHabit);
       });
-      document.getElementById('habitName')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter') ui.habits.saveEditor();
+      ['habitName', 'habitGroupNew'].forEach(id => {
+        document.getElementById(id)?.addEventListener('keydown', e => {
+          if (e.key === 'Enter') ui.habits.saveEditor();
+        });
       });
       ['habitModalCloseBtn', 'habitModalCancelBtn'].forEach(id => {
         document.getElementById(id)?.addEventListener('click', () => {

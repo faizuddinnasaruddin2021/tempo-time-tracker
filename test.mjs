@@ -61,11 +61,13 @@ assert.ok(hsrc, 'habitMath markers not found in index.html');
 const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
         habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
         habitBestStreak, habitDaysSinceLog, habitObservations,
-        sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats } =
+        sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats,
+        habitDayTarget, habitLastMinutes } =
   new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
     habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
     habitBestStreak, habitDaysSinceLog, habitObservations,
-    sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats };`)();
+    sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats,
+    habitDayTarget, habitLastMinutes };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -304,4 +306,21 @@ const byDay = habitGroupStats([h('A'), h('B')], { A: mondays, B: mondays }, now,
 assert.equal(byDay.bestWeekday.index, 0, 'Monday is index 0');
 assert.equal(byDay.bestWeekday.rate, 1);
 
-console.log('habitMath: 29 checks passed');
+// ---- One-click logging ---------------------------------------------------------------
+// 30. A click on one square is worth a day, not a whole week's target
+assert.equal(habitDayTarget({ kind: 'count', target: 10, period: 'day' }), 10);
+assert.equal(habitDayTarget({ kind: 'check', target: 3, period: 'week' }), 1,
+  'ticking one day of a "3x a week" habit is one tick, not three');
+assert.equal(habitDayTarget({ kind: 'count', target: 70, period: 'week' }), 10);
+assert.equal(habitDayTarget({ kind: 'count', target: 3, period: 'week' }), 1, 'never rounds to zero');
+assert.equal(habitDayTarget({ kind: 'count', target: 0, period: 'day' }), 1);
+
+// 31. The suggested time is the last one actually logged, before the day in question
+const timeLog = { '2026-08-03': 45, '2026-08-05': 30, '2026-08-08': 5 };
+assert.equal(habitLastMinutes(timeLog, '2026-08-08'), 30, 'the 5 logged today is not a suggestion for today');
+assert.equal(habitLastMinutes(timeLog, '2026-08-04'), 45);
+assert.equal(habitLastMinutes({ '2026-08-05': 0 }, '2026-08-08'), null, 'a zero is absence, not a suggestion');
+assert.equal(habitLastMinutes({}, '2026-08-08'), null);
+assert.equal(habitLastMinutes(undefined, '2026-08-08'), null);
+
+console.log('habitMath: 31 checks passed');

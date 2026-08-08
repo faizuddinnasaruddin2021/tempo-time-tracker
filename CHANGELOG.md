@@ -15,6 +15,19 @@ All notable changes to Habitus. Newest first.
   would orphan every existing log behind a cosmetic change.
 
 ### Added
+- **Clicking a day square logs that day**, instead of only selecting it — a full day's worth
+  if it's short, cleared if it was already done. One day of a "3× a week" habit ticks once,
+  not three times. **Double-click opens the habit**, where you can see the status and log
+  hours.
+- **Time is one tap on the row.** Any habit that tracks time gets a ⏱ chip offering the last
+  amount you logged on it — log 45 minutes on Thursday and Saturday offers `⏱ +45m`. After
+  that it shows the running total and keeps topping up.
+- **Groups are picked from a list** rather than retyped, with "＋ New group…" for a new one.
+  Typing a name that already exists in another case joins the existing group instead of
+  making a near-duplicate.
+- The "Also track time spent" option is no longer hidden on linked habits — it shows as
+  ticked and locked, with a note saying why, rather than looking like the feature vanished.
+  Manual time logging now works on linked habits too, topping up what the sessions covered.
 - **Habit groups.** Put habits under your own headings — Morning, Evening, whatever — by
   dragging a habit's handle onto another group, or by typing a name in the habit editor
   (which suggests the ones you already use). Each heading carries that day's completion and

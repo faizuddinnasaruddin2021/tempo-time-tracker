@@ -185,6 +185,8 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitMergedEntries(habit, manual, sessionMinutes)` | The read view: hand-logged plus linked focus minutes |
 | `habitTimeEntries(habit, manualMinutes, sessionMinutes, merged)` | The time track for habits that count something else |
 | `habitGroupStats(habits, log, today, days)` | A group's pooled rate, its weakest habit and its best weekday |
+| `habitDayTarget(habit)` | What one day is worth — a weekly target divided down, never below 1 |
+| `habitLastMinutes(entries, beforeKey)` | The last time logged before a day, or `null` — the one-tap suggestion |
 
 ### The week strip and the selected day
 
@@ -284,6 +286,27 @@ a weekly habit's month "the last 30 weeks" (it's five), and printing a bare targ
 yes/no habit that has no unit ("never reaches 3" → "never reaches 3 per week").
 
 ### Logging affordances
+
+**A click on a day square logs it** (`toggleDay`): a full day's worth if it's short, zero if
+it was already there. `habitDayTarget()` divides a weekly target down first, so ticking one
+day of a "3× a week" habit is one tick rather than three. **Double-click opens the habit.**
+The single-click action sits behind a 220 ms timer that the double-click cancels — without
+it, a double-click would toggle the day on its way to opening the detail.
+
+That pattern only works for a click that can be *undone by itself*. The row's time chip
+mutates too, so it deliberately has no double-click partner: two clicks there mean "log it
+twice", which is a legitimate thing to want.
+
+**Time is one tap on the row.** The chip offers `habitLastMinutes()` — the last amount
+logged on that habit before the selected day, falling back to 30 — because yesterday's
+session length is the best guess at today's. Once a day has time on it the chip shows the
+running total and keeps topping up. The detail view has the same track with a full stepper,
+including for linked habits: `setMinutes()` stores only the hand-logged remainder, so you
+can top up a day the sessions only partly covered.
+
+The group picker is a `<select>` of existing groups plus "＋ New group…", not a text field:
+retyping a name is how you end up with "Morning" and "morning" as two groups, so a typed
+name that matches an existing one case-insensitively resolves to it.
 
 Clicking a habit's name — in the list, in Insights, or on an observation line — opens the
 **detail modal**: 30-day rate, current and best streak, lifetime total, trend, its own
