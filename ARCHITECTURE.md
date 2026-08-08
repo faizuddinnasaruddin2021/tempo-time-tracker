@@ -41,7 +41,7 @@ store = {
   axes:       [{ id, name }],              // grouping dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
-  habits:     [{ id, name, color, kind, target, unit, period, catId, trackTime }],  // see Habits
+  habits:     [{ id, name, color, kind, target, unit, period, catId, trackTime, group }],
   habitLog:   { [habitId]: { 'YYYY-MM-DD': number } },
   habitMinutes: { [habitId]: { 'YYYY-MM-DD': number } },   // hand-logged time, when tracked
   tasks:      [{ id, text, pomodoros, done }],
@@ -177,6 +177,7 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `sessionMinutesByDay(sessions, catId)` | Minutes per day in one category; splits at midnight like `bucketByHour` |
 | `habitMergedEntries(habit, manual, sessionMinutes)` | The read view: hand-logged plus linked focus minutes |
 | `habitTimeEntries(habit, manualMinutes, sessionMinutes, merged)` | The time track for habits that count something else |
+| `habitGroupStats(habits, log, today, days)` | A group's pooled rate, its weakest habit and its best weekday |
 
 ### The week strip and the selected day
 
@@ -207,6 +208,32 @@ Insights consistency grid — can use the full range.
 Streak and the 30-day rate on each row stay "as of now" no matter which day is selected;
 only the progress line and the controls follow the selection, because that's the number the
 controls are about to change.
+
+### Groups
+
+`habit.group` is a free-text name; `''` is the ungrouped bucket and always sorts last.
+Group **order follows habit order** in `store.habits`, so one array is the single source of
+truth for both which group a habit is in and where it sits — there's no separate group list
+to keep in sync, and no orphan groups to garbage-collect.
+
+A group with nothing in it stops existing, which is the intended behaviour: groups are a
+view of the habits, not entities of their own.
+
+The list renders flat when nothing is grouped — someone who has never made a group
+shouldn't be shown an "Ungrouped" heading. Collapsed groups are remembered in
+`settings.habitCollapsed` and still count toward the day's total: they're hidden, not off.
+
+**Drag and drop** uses native HTML5 DnD (`wireDropTarget`). Dropping on a row inserts
+before it; dropping on a section appends to the end of *that group* rather than the end of
+the list, so a habit doesn't jump back out of the group you just dropped it on. The handle
+is a separate element rather than `draggable` on the row, because the row is full of inputs
+and buttons that stop working properly inside a draggable ancestor. Touch has no HTML5 drag
+at all, so the handle is hidden under `@media (hover: none)` and the editor's Group field
+(with a datalist of existing names) is the way in on a phone.
+
+`habitGroupStats()` pools a group's **periods**, not its habits, so a weekly habit can't
+outvote six daily ones. It names the weakest habit and the group's best weekday — a group
+percentage with nowhere to point is just a scold.
 
 ### Habit analysis
 

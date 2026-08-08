@@ -10,6 +10,16 @@ All notable changes to Habitus. Newest first.
   would orphan every existing log behind a cosmetic change.
 
 ### Added
+- **Habit groups.** Put habits under your own headings — Morning, Evening, whatever — by
+  dragging a habit's handle onto another group, or by typing a name in the habit editor
+  (which suggests the ones you already use). Each heading carries that day's completion and
+  the group's 30-day consistency, and collapses.
+- Dropping onto a row inserts above it, so the same drag also reorders. Groups have no
+  existence of their own: empty one out and its heading goes away. The list stays flat until
+  you make your first group.
+- **A "Habit Groups" card in Insights**: each group's pooled consistency, how many habits
+  are in it, the weekday it holds up best on, and which habit is dragging it down. Rates
+  pool *periods*, so one weekly habit can't outvote six daily ones.
 - **A week strip across the top of the habit list**, with weekday, date and a ring showing
   how much of each day was done. Picking a day moves **every** habit to it at once, and the
   card above retitles to that date — so fixing up Wednesday is one click, not one per habit.

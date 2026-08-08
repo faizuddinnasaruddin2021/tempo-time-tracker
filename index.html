@@ -1986,6 +1986,54 @@
     .habit-week-date { font-size: 14px; font-weight: 600; color: var(--text-primary); }
     .habit-week-ring { width: 20px; height: 20px; }
 
+    /* ===== HABIT GROUPS ===== */
+    .habit-group { border-radius: var(--radius-md); transition: background 160ms ease; }
+    .habit-group.drag-over,
+    .habit-group-head.drag-over { background: var(--accent-alpha); }
+    .habit-line.drag-over { box-shadow: inset 0 2px 0 var(--accent); }
+    .habit-line.dragging { opacity: 0.4; }
+
+    .habit-group-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 14px 6px 8px;
+      border-radius: var(--radius-md);
+    }
+    .habit-group-name {
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+    .habit-group-caret {
+      background: none;
+      border: none;
+      color: var(--text-secondary);
+      font-size: 12px;
+      cursor: pointer;
+      padding: 0 2px;
+      transition: transform 160ms ease;
+    }
+    .habit-group-caret.collapsed { transform: rotate(-90deg); }
+
+    /* Only shows on hover — a grab handle on every row all the time is visual noise */
+    .habit-drag {
+      cursor: grab;
+      color: var(--text-secondary);
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 160ms ease;
+    }
+    .habit-line:hover .habit-drag { opacity: 0.6; }
+    .habit-drag:active { cursor: grabbing; }
+    /* HTML5 drag doesn't work by touch, so don't offer a handle that can't be dragged —
+       the Group field in the habit editor is the way in on a phone. */
+    @media (hover: none) {
+      .habit-drag { display: none; }
+    }
+
     .habit-line {
       padding: 14px 0;
       border-bottom: 1px solid var(--hairline);
@@ -2676,8 +2724,14 @@
         <!-- Habits: a separate track from sessions, so the lens above doesn't touch these -->
         <div class="card">
           <div class="card-title">Habits — Last 30 Days</div>
-          <div class="insights-note">The group filter above applies to sessions, not habits.</div>
+          <div class="insights-note">The "group by" filter above slices <em>sessions</em>. Habit groups are a separate thing, below.</div>
           <div id="insightsHabits"></div>
+        </div>
+
+        <div class="card" id="insightsHabitGroupCard" style="display: none;">
+          <div class="card-title">Habit Groups</div>
+          <div class="insights-note">Pooled across each group's habits, over the last 30 days.</div>
+          <div id="insightsHabitGroups"></div>
         </div>
 
         <div class="card">
@@ -2864,6 +2918,11 @@
             <option value="day">Day</option>
             <option value="week">Week</option>
           </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Group</label>
+          <input type="text" class="form-input" id="habitGroup" placeholder="e.g. Morning" list="habitGroupOptions" autocomplete="off">
+          <datalist id="habitGroupOptions"></datalist>
         </div>
         <div class="form-group">
           <label class="form-label">Link to a Focus category</label>
@@ -3325,6 +3384,40 @@
 
     const HABIT_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+    // A group's numbers, pooled across its habits: how many of its periods were completed,
+    // which habit is dragging it down, and which weekday it holds up best on. Pooling
+    // periods (not habits) keeps a weekly habit from outvoting six daily ones.
+    function habitGroupStats(habits, log, today, days) {
+      let done = 0, total = 0;
+      const weekdays = Array.from({ length: 7 }, () => ({ hit: 0, total: 0 }));
+      let weakest = null;
+
+      habits.forEach(habit => {
+        const entries = log[habit.id] || {};
+        const rate = habitCompletionRate(habit, entries, today, days);
+        done += rate.done;
+        total += rate.total;
+        // Only a habit with periods behind it can be "the weak one" — a brand new habit
+        // sitting at 0% isn't a problem yet, it's just new.
+        if (rate.total && (!weakest || rate.rate < weakest.rate)) {
+          weakest = { habitId: habit.id, name: habit.name, rate: rate.rate };
+        }
+        habitWeekdayRate(entries, today, days).forEach((slot, i) => {
+          weekdays[i].hit += slot.hit;
+          weekdays[i].total += slot.total;
+        });
+      });
+
+      let bestWeekday = null;
+      weekdays.forEach((slot, i) => {
+        if (!slot.total || !slot.hit) return;
+        const rate = slot.hit / slot.total;
+        if (!bestWeekday || rate > bestWeekday.rate) bestWeekday = { index: i, rate };
+      });
+
+      return { done, total, rate: total ? done / total : 0, weakest, bestWeekday };
+    }
+
     // Minutes logged per day in one category, for habits linked to it. Walks day boundaries
     // like bucketByHour rather than dividing durations, so a session running past midnight
     // bills each side to its own day and no minute is invented or lost.
@@ -3683,7 +3776,9 @@
       // A link to a deleted category would silently stop contributing; drop it instead
       store.habits.forEach(h => {
         if (h.catId && !store.categories.some(c => c.id === h.catId)) h.catId = '';
+        if (typeof h.group !== 'string') h.group = '';   // '' is the ungrouped bucket
       });
+      if (!Array.isArray(store.settings.habitCollapsed)) store.settings.habitCollapsed = [];
       if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Group' }];
       store.categories.forEach(c => {
         if (!c.groups) c.groups = {};
@@ -4358,6 +4453,77 @@
           });
         },
 
+        // ---- Groups ---------------------------------------------------------------------
+        // Group order follows the habit order, so dragging a habit somewhere new can also
+        // move its whole group. '' is the ungrouped bucket and always sorts last.
+        groupNames() {
+          const names = [];
+          store.habits.forEach(h => {
+            const name = h.group || '';
+            if (!names.includes(name)) names.push(name);
+          });
+          return names.filter(n => n).concat(names.includes('') ? [''] : []);
+        },
+
+        habitsIn(group) {
+          return store.habits.filter(h => (h.group || '') === group);
+        },
+
+        isCollapsed(group) {
+          return store.settings.habitCollapsed.includes(group);
+        },
+
+        toggleCollapsed(group) {
+          const list = store.settings.habitCollapsed;
+          const at = list.indexOf(group);
+          at < 0 ? list.push(group) : list.splice(at, 1);
+          saveStore();
+          this.render();
+        },
+
+        // Drop lands the habit in a group, and before a specific habit when one was the
+        // drop target — so the same gesture regroups and reorders.
+        moveHabit(dragId, group, beforeId) {
+          const from = store.habits.findIndex(h => h.id === dragId);
+          if (from < 0 || dragId === beforeId) return;
+          const [habit] = store.habits.splice(from, 1);
+          habit.group = group;
+
+          let insertAt;
+          if (beforeId) {
+            insertAt = store.habits.findIndex(h => h.id === beforeId);
+          } else {
+            // No target row: land at the end of that group rather than the end of the list,
+            // or the habit would jump out of the group you just dropped it on.
+            const last = store.habits.map(h => h.group || '').lastIndexOf(group);
+            insertAt = last < 0 ? store.habits.length : last + 1;
+          }
+          store.habits.splice(insertAt < 0 ? store.habits.length : insertAt, 0, habit);
+          saveStore();
+          this.render();
+        },
+
+        // One set of drag wiring for both drop targets: a row (insert before it) and a
+        // section (append to its group).
+        wireDropTarget(el, group, beforeId) {
+          el.addEventListener('dragover', e => {
+            if (!this.dragId) return;
+            e.preventDefault();
+            e.stopPropagation();
+            e.dataTransfer.dropEffect = 'move';
+            el.classList.add('drag-over');
+          });
+          el.addEventListener('dragleave', () => el.classList.remove('drag-over'));
+          el.addEventListener('drop', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            el.classList.remove('drag-over');
+            const id = e.dataTransfer.getData('text/plain') || this.dragId;
+            if (id) this.moveHabit(id, group, beforeId);
+            this.dragId = null;
+          });
+        },
+
         selectDay(key) {
           if (key > habitDayKey(new Date())) return;   // a day that hasn't happened has nothing to log
           this.selectedDay = key;
@@ -4605,6 +4771,15 @@
             catSelect.appendChild(Object.assign(document.createElement('option'), { value: c.id, textContent: c.name }));
           });
           catSelect.value = habit?.catId || '';
+          document.getElementById('habitGroup').value = habit?.group || '';
+          // A datalist so existing groups get reused rather than re-typed into near-misses.
+          // This field is also the only way to group on a touch device, where the drag
+          // handle has nothing to drag with.
+          const groupOptions = document.getElementById('habitGroupOptions');
+          groupOptions.innerHTML = '';
+          this.groupNames().forEach(name => {
+            if (name) groupOptions.appendChild(Object.assign(document.createElement('option'), { value: name }));
+          });
           document.getElementById('habitTrackTime').checked = !!habit?.trackTime;
           document.getElementById('habitModalDeleteBtn').style.display = isNew ? 'none' : '';
           this.syncEditorFields();
@@ -4649,6 +4824,7 @@
             unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
             catId: document.getElementById('habitCategory').value,
             trackTime: document.getElementById('habitTrackTime').checked,
+            group: document.getElementById('habitGroup').value.trim(),
           };
           if (this.editingHabit) {
             Object.assign(this.editingHabit, fields);
@@ -4699,12 +4875,33 @@
           // Everything on this page reports the *selected* day, not today — otherwise
           // picking Tuesday would edit Tuesday while the numbers still described today.
           let complete = 0;
-          store.habits.forEach(habit => {
+          const countRow = habit => {
             const entries = this.entriesFor(habit);
             const progress = habitProgress(habit, entries, selected);
             if (progress.complete) complete++;
-            list.appendChild(this.renderRow(habit, entries, progress, selected));
-          });
+            return this.renderRow(habit, entries, progress, selected);
+          };
+
+          const groups = this.groupNames();
+          // Nobody who hasn't made a group should be shown an "Ungrouped" heading
+          if (groups.length <= 1 && !groups[0]) {
+            store.habits.forEach(habit => list.appendChild(countRow(habit)));
+            this.wireDropTarget(list, '', null);
+          } else {
+            groups.forEach(group => {
+              const section = document.createElement('div');
+              section.className = 'habit-group';
+              section.appendChild(this.renderGroupHead(group, selected));
+              if (!this.isCollapsed(group)) {
+                this.habitsIn(group).forEach(habit => section.appendChild(countRow(habit)));
+              } else {
+                // Collapsed groups still count toward the day's total; they're hidden, not off
+                this.habitsIn(group).forEach(habit => countRow(habit));
+              }
+              this.wireDropTarget(section, group, null);
+              list.appendChild(section);
+            });
+          }
 
           const title = document.getElementById('habitsTodayTitle');
           if (title) title.textContent = isToday ? 'Today' : this.selectedLabel();
@@ -4803,19 +5000,74 @@
           return svg;
         },
 
+        renderGroupHead(group, selected) {
+          const head = document.createElement('div');
+          head.className = 'habit-group-head';
+          const habits = this.habitsIn(group);
+          const collapsed = this.isCollapsed(group);
+
+          const caret = Object.assign(document.createElement('button'), {
+            className: 'habit-group-caret' + (collapsed ? ' collapsed' : ''),
+            textContent: '▾',
+            title: collapsed ? 'Expand' : 'Collapse',
+          });
+          caret.addEventListener('click', () => this.toggleCollapsed(group));
+
+          const done = habits.filter(h => habitProgress(h, this.entriesFor(h), selected).complete).length;
+          const log = {};
+          habits.forEach(h => { log[h.id] = this.entriesFor(h); });
+          const stats = habitGroupStats(habits, log, new Date(), this.WINDOW);
+
+          head.append(
+            caret,
+            Object.assign(document.createElement('span'), {
+              className: 'habit-group-name', textContent: group || 'Ungrouped',
+            }),
+            Object.assign(document.createElement('span'), {
+              className: 'habit-meta', textContent: `${done}/${habits.length}`,
+              title: `${done} of ${habits.length} complete on the selected day`,
+            }),
+            Object.assign(document.createElement('span'), {
+              className: 'habit-meta', textContent: `${Math.round(stats.rate * 100)}% of 30d`,
+              title: `${stats.done} of ${stats.total} periods completed across this group`,
+            }),
+          );
+          this.wireDropTarget(head, group, null);
+          return head;
+        },
+
         renderRow(habit, entries, progress, selected) {
           const row = document.createElement('div');
           row.className = 'habit-line' + (progress.complete ? ' done' : '');
+          this.wireDropTarget(row, habit.group || '', habit.id);
 
           const main = document.createElement('div');
           main.className = 'habit-main';
+
+          // A dedicated handle rather than a draggable row: the row is full of inputs and
+          // buttons, and making the whole thing draggable breaks selecting text in them.
+          const handle = Object.assign(document.createElement('span'), {
+            className: 'habit-drag', textContent: '⠿', title: 'Drag into another group',
+          });
+          handle.draggable = true;
+          handle.addEventListener('dragstart', e => {
+            this.dragId = habit.id;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', habit.id);
+            row.classList.add('dragging');
+          });
+          handle.addEventListener('dragend', () => {
+            this.dragId = null;
+            row.classList.remove('dragging');
+            document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+          });
 
           const head = document.createElement('div');
           head.className = 'habit-head';
           const dot = document.createElement('div');
           dot.className = 'habit-dot';
           dot.style.background = habit.color;
-          head.appendChild(dot);
+          head.append(handle, dot);
 
           const nameBtn = Object.assign(document.createElement('button'), {
             className: 'habit-name', textContent: habit.name, title: 'Open habit insights',
@@ -5012,6 +5264,8 @@
             grid.appendChild(this.renderGridRow(habit, entries, today));
           });
 
+          this.renderGroupInsights(today);
+
           // Thirty identical squares say nothing about when they were; name the ends at least
           const note = document.getElementById('insightsHabitGridNote');
           if (note) {
@@ -5029,6 +5283,64 @@
           weekdayBox.appendChild(head);
           store.habits.forEach(habit => {
             weekdayBox.appendChild(this.renderWeekdayRow(habit, this.entriesFor(habit), today));
+          });
+        },
+
+        // One line per group: how consistent it is, the day it holds up best, and the habit
+        // pulling it down — a group number without somewhere to point is just a scold.
+        renderGroupInsights(today) {
+          const card = document.getElementById('insightsHabitGroupCard');
+          const box = document.getElementById('insightsHabitGroups');
+          if (!card || !box) return;
+          box.innerHTML = '';
+
+          const groups = this.groupNames();
+          // With nothing grouped there's one bucket and the card would just restate the
+          // habit table above it
+          if (groups.length <= 1) { card.style.display = 'none'; return; }
+          card.style.display = '';
+
+          groups.forEach(group => {
+            const habits = this.habitsIn(group);
+            const log = {};
+            habits.forEach(h => { log[h.id] = this.entriesFor(h); });
+            const stats = habitGroupStats(habits, log, today, this.WINDOW);
+
+            const row = document.createElement('div');
+            row.className = 'habit-stat-row';
+            row.appendChild(Object.assign(document.createElement('div'), {
+              className: 'habit-group-name', textContent: group || 'Ungrouped',
+            }));
+
+            const bar = document.createElement('div');
+            const track = document.createElement('div');
+            track.className = 'habit-bar';
+            const fill = document.createElement('div');
+            fill.className = 'habit-bar-fill';
+            fill.style.width = (stats.rate * 100) + '%';
+            fill.style.background = habits[0]?.color || 'var(--accent)';
+            track.appendChild(fill);
+            bar.append(track, Object.assign(document.createElement('div'), {
+              className: 'insights-note', style: 'margin: 6px 0 0;',
+              textContent: `${Math.round(stats.rate * 100)}% — ${stats.done} of ${stats.total} periods`,
+            }));
+            row.appendChild(bar);
+
+            const cell = (label, value, title = '') => {
+              const el = document.createElement('div');
+              el.title = title;
+              el.append(
+                Object.assign(document.createElement('span'), { className: 'habit-stat-label', textContent: label }),
+                Object.assign(document.createElement('span'), { className: 'habit-stat-value', textContent: value }),
+              );
+              return el;
+            };
+            row.appendChild(cell('Habits', String(habits.length)));
+            row.appendChild(cell('Best Day', stats.bestWeekday ? HABIT_WEEKDAYS[stats.bestWeekday.index] : '—',
+              stats.bestWeekday ? `${Math.round(stats.bestWeekday.rate * 100)}% of the time` : 'Nothing logged yet'));
+            row.appendChild(cell('Weakest', stats.weakest ? stats.weakest.name : '—',
+              stats.weakest ? `${Math.round(stats.weakest.rate * 100)}% over 30 days` : ''));
+            box.appendChild(row);
           });
         },
 

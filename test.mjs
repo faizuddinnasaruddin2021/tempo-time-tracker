@@ -61,11 +61,11 @@ assert.ok(hsrc, 'habitMath markers not found in index.html');
 const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
         habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
         habitBestStreak, habitDaysSinceLog, habitObservations,
-        sessionMinutesByDay, habitMergedEntries, habitTimeEntries } =
+        sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats } =
   new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
     habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
     habitBestStreak, habitDaysSinceLog, habitObservations,
-    sessionMinutesByDay, habitMergedEntries, habitTimeEntries };`)();
+    sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -272,4 +272,36 @@ assert.equal(habitProgress(exercise, habitMergedEntries(exercise, {}, focusMins)
 assert.equal(habitStreak(exercise, habitMergedEntries(exercise, {}, focusMins), day(2026, 8, 8)), 1,
   'and the streak counts it');
 
-console.log('habitMath: 25 checks passed');
+// ---- Group rollups -------------------------------------------------------------------
+// 26. A group pools its habits' *periods*, so a weekly habit can't outvote six daily ones
+const groupDaily = h('A');
+const groupWeekly = h('B', { period: 'week', kind: 'check', target: 1, unit: '' });
+const pooled = habitGroupStats([groupDaily, groupWeekly],
+  { A: span(2026, 8, 5, 4, 10), B: span(2026, 8, 5, 4, 1) }, now, 30);
+assert.equal(pooled.total, 35, '30 days for the daily habit plus 5 weeks for the weekly one');
+assert.equal(pooled.done, 4 + 1, 'four days, and the one week those days fall in');
+assert.equal(Math.round(pooled.rate * 100), 14);
+
+// 27. The weakest habit is named, so a group's number has somewhere to point
+const weak = habitGroupStats([h('Strong'), h('Weak')],
+  { Strong: span(2026, 7, 20, 25, 10), Weak: span(2026, 8, 7, 1, 10) }, now, 30);
+assert.equal(weak.weakest.name, 'Weak');
+assert.ok(weak.weakest.rate < 0.2);
+
+// 28. An empty group has no weakest habit and no best day — nothing to point at
+const empty = habitGroupStats([], {}, now, 30);
+assert.deepEqual(empty, { done: 0, total: 0, rate: 0, weakest: null, bestWeekday: null });
+assert.equal(habitGroupStats([h('New')], { New: {} }, now, 30).bestWeekday, null,
+  'a habit with nothing logged has no best day');
+
+// 29. Best weekday is Monday-first, pooled across the group
+const mondays = {};
+for (let i = 0; i < 30; i++) {
+  const d = new Date(2026, 7, 8 - i);
+  if (d.getDay() === 1) mondays[habitDayKey(d)] = 10;
+}
+const byDay = habitGroupStats([h('A'), h('B')], { A: mondays, B: mondays }, now, 30);
+assert.equal(byDay.bestWeekday.index, 0, 'Monday is index 0');
+assert.equal(byDay.bestWeekday.rate, 1);
+
+console.log('habitMath: 29 checks passed');
