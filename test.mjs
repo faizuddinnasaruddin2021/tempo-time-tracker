@@ -59,9 +59,11 @@ console.log('bucketByHour: 7 checks passed');
 const hsrc = html.match(/\/\/ BEGIN habitMath.*\n([\s\S]*?)\/\/ END habitMath/);
 assert.ok(hsrc, 'habitMath markers not found in index.html');
 const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
-        habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal } =
+        habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
+        habitBestStreak, habitDaysSinceLog, habitObservations } =
   new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
-    habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal };`)();
+    habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
+    habitBestStreak, habitDaysSinceLog, habitObservations };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -138,4 +140,88 @@ assert.equal(habitTotal({ '2026-08-01': 30, '2026-08-02': 45 }), 75);
 assert.equal(habitTotal({ '2026-08-01': 1, '2026-08-02': 1, '2026-08-03': 1 }), 3);
 assert.equal(habitTotal(undefined), 0);
 
-console.log('habitMath: 11 checks passed');
+// 12. Best streak is the longest run ever, not the live one
+const runs = { '2026-08-01': 10, '2026-08-02': 10, '2026-08-03': 10, '2026-08-05': 10, '2026-08-06': 10 };
+assert.equal(habitBestStreak(daily, runs, day(2026, 8, 8)), 3, 'the Aug 1–3 run, not the later two');
+assert.equal(habitStreak(daily, runs, day(2026, 8, 8)), 0, 'and the live streak is separately broken');
+assert.equal(habitBestStreak(daily, {}, day(2026, 8, 8)), 0);
+assert.equal(habitBestStreak(weekly, { '2026-07-20': 1, '2026-07-21': 1, '2026-07-22': 1,
+  '2026-07-27': 1, '2026-07-28': 1, '2026-07-29': 1 }, day(2026, 8, 8)), 2, 'two complete weeks back to back');
+
+// 13. "Never logged" is not the same as "logged today" — one invites, the other reassures
+assert.equal(habitDaysSinceLog({ '2026-08-05': 1 }, day(2026, 8, 8)), 3);
+assert.equal(habitDaysSinceLog({ '2026-08-08': 1 }, day(2026, 8, 8)), 0);
+assert.equal(habitDaysSinceLog({}, day(2026, 8, 8)), null);
+
+// ---- Observations ------------------------------------------------------------------
+const now = day(2026, 8, 8);
+const span = (y, m, d, count, value) => {
+  const o = {};
+  for (let i = 0; i < count; i++) o[habitDayKey(new Date(y, m - 1, d + i))] = value;
+  return o;
+};
+const h = (id, extra = {}) => ({ id, name: id, kind: 'count', target: 10, unit: 'pages', period: 'day', ...extra });
+
+// 14. A decline names both numbers, so "it dropped" comes with "from what"
+const slipping = { ...span(2026, 6, 10, 20, 10), ...span(2026, 8, 5, 3, 10) };
+const [drop] = habitObservations([h('Read')], { Read: slipping }, now);
+assert.equal(drop.tone, 'bad');
+assert.match(drop.text, /slipping/);
+assert.match(drop.text, /10%.*from 67%/, 'states where it is now and where it was');
+assert.match(drop.text, /last 30 days/);
+
+// 14b. A weekly habit counts its own periods — "the last 30 weeks" would be a lie
+const weeklyHabit = h('Gym', { kind: 'check', target: 3, unit: '', period: 'week' });
+const weeklySlip = { ...span(2026, 6, 15, 3, 1), ...span(2026, 6, 22, 3, 1), ...span(2026, 8, 3, 1, 1) };
+const [weeklyDrop] = habitObservations([weeklyHabit], { Gym: weeklySlip }, now);
+assert.match(weeklyDrop.text, /last 5 weeks/, 'a month is five weeks, not thirty');
+assert.doesNotMatch(habitObservations([weeklyHabit], { Gym: weeklySlip }, now, 10)
+  .map(o => o.text).join(' '), /30 weeks/);
+
+// 14c. A yes/no habit has no unit, so its target reads as "3 per week", not a bare "3"
+const noReach = habitObservations([weeklyHabit], { Gym: span(2026, 8, 3, 2, 1) }, now, 10);
+assert.match(noReach.map(o => o.text).join(' '), /never reaches 3 per week/);
+
+// 15. A dormant habit reports only that — its rate would just restate the silence
+const quiet = habitObservations([h('Gym')], { Gym: { '2026-07-01': 10 } }, now);
+assert.equal(quiet.length, 1);
+assert.equal(quiet[0].tone, 'bad');
+assert.match(quiet[0].text, /gone quiet.*38 days/);
+
+// 16. Never logged invites a first entry instead of scolding
+const fresh = habitObservations([h('Meditate')], { Meditate: {} }, now);
+assert.deepEqual(fresh.map(o => o.tone), ['warn']);
+assert.match(fresh[0].text, /nothing logged yet/);
+
+// 17. Logging every day but never hitting the number blames the target, not the person
+const short = habitObservations([h('Write')], { Write: span(2026, 7, 20, 20, 4) }, now);
+assert.equal(short[0].tone, 'bad');
+assert.match(short[0].text, /never reaches 10 pages/);
+
+// 18. Good news is reported too, and a streak is its own observation
+const perfect = habitObservations([h('Read')], { Read: span(2026, 6, 30, 40, 10) }, now);
+assert.deepEqual(perfect.map(o => o.tone), ['good', 'good', 'good']);
+const perfectText = perfect.map(o => o.text).join(' ');
+assert.match(perfectText, /holding strong at 100%/);
+assert.match(perfectText, /on a 40-day streak/);
+assert.match(perfectText, /is up — 100%, from 33%/, 'the run only covers part of the previous window');
+
+// 19. A weekday hole is called out by name — the "weekends kill my streak" case
+const weekdaysOnly = {};
+for (let i = 0; i < 90; i++) {
+  const d = new Date(2026, 7, 8 - i);
+  if (d.getDay() !== 0 && d.getDay() !== 6) weekdaysOnly[habitDayKey(d)] = 10;
+}
+const gap = habitObservations([h('Standup')], { Standup: weekdaysOnly }, now, 10);
+assert.match(gap.map(o => o.text).join(' '), /never happens on Sats or Suns/);
+
+// 20. Worst news first, and the limit is respected — nobody reads a wall of lines
+const many = habitObservations(
+  [h('Read'), h('Gym'), h('Meditate'), h('Write')],
+  { Read: slipping, Gym: { '2026-07-01': 10 }, Meditate: {}, Write: span(2026, 7, 20, 20, 4) },
+  now, 2);
+assert.equal(many.length, 2);
+assert.deepEqual(many.map(o => o.habitId), ['Gym', 'Read'], 'dormant outranks slipping');
+assert.ok(many[0].score > many[1].score);
+
+console.log('habitMath: 23 checks passed');

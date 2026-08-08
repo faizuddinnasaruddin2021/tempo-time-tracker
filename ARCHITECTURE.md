@@ -150,6 +150,9 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitCompletionRate(habit, entries, endDate, days)` | `{ done, total, rate }` over that window |
 | `habitWeekdayRate(entries, endDate, days)` | Mon-first `[{ hit, total }]` — counts *logged*, not target-met |
 | `habitTotal(entries)` | Lifetime units; for a yes/no habit that's its days-done count |
+| `habitBestStreak(habit, entries, today)` | The longest run ever, walked from the first logged day |
+| `habitDaysSinceLog(entries, today)` | Days since the last entry; `null` for never — a different message |
+| `habitObservations(habits, log, today, limit)` | Scored plain-language findings, worst first |
 
 The 14-day strip on each row is also the day picker: clicking a square points that row's
 stepper at that day (`ui.habits.editingDay`, deliberately not persisted). Backfilling is
@@ -176,6 +179,36 @@ can't look like a large swing.
 
 The Insights view carries a note that the lens bar above it filters sessions only. Habits
 have no category, so the lens has nothing to filter them by.
+
+### Observations ("How It's Going")
+
+`habitObservations()` turns the numbers into sentences: what's slipping and from what, what
+has gone quiet, where the target looks too high, which weekday never happens, and what's
+holding up. Each finding carries a **score**, and only the top few render — one line per
+habit is a wall nobody reads, so the list is deliberately capped.
+
+Two rules encoded there, both about not saying something useless:
+
+- A **dormant** habit (14+ days silent) reports *only* that. Its completion rate would
+  restate the same silence in percentages.
+- **Never logged** and **logged today** are different states, which is why
+  `habitDaysSinceLog()` returns `null` rather than a number for a habit with no history —
+  one gets an invitation, the other gets a rate.
+
+The phrasing is asserted in `test.mjs`, including the two bugs it has already had: calling
+a weekly habit's month "the last 30 weeks" (it's five), and printing a bare target for a
+yes/no habit that has no unit ("never reaches 3" → "never reaches 3 per week").
+
+### Logging affordances
+
+Clicking a habit's name — in the list, in Insights, or on an observation line — opens the
+**detail modal**: 30-day rate, current and best streak, lifetime total, trend, its own
+consistency strip and weekday row, and the way through to Edit. Editing is one level in
+now; the name no longer opens the editor directly.
+
+`quickAdds(habit)` builds the add-chips from the target itself: a single step, half, and
+the whole thing (`+1 / +5 / +10` for ten pages; `+5 / +15 / +30` for thirty minutes).
+Tapping `+1` ten times is the fastest way to make someone stop logging.
 
 ## Code layout inside `index.html`
 

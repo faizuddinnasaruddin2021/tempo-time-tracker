@@ -19,6 +19,18 @@ All notable changes to Tempo. Newest first.
   cards: per-habit completion rate, streak, lifetime total and a trend against the previous
   30 days; a 30-day consistency grid; and a weekday breakdown over 90 days — the
   "weekends kill my streak" view.
+- **"How It's Going" at the top of the Habits page.** Beyond the three tiles, it now says
+  in words what's actually happening: which habit is slipping and from what number, which
+  has gone quiet, where the target looks too high to ever hit, which weekday never happens,
+  and what's holding strong. Worst news first, capped at four lines. Click any line to open
+  that habit.
+- **Every habit row carries its own numbers** — 30-day completion rate and whether that's
+  up or down on the previous 30 days, next to the streak.
+- **Clicking a habit opens its own detail view**: 30-day rate, current and best streak,
+  lifetime total, trend, its consistency strip and its weekday pattern. Editing moved
+  inside it, so a click on the name no longer drops you into a form.
+- **Quick-add chips.** Counting to ten pages one tap at a time was absurd; each habit now
+  offers a step, half its target and the full target (`+1 / +5 / +10`, `+5 / +15 / +30`).
 - Rates count *periods*, so a weekly habit that went 1-for-1 reads as 100%, not 14%.
   The lens bar on Insights notes that it filters sessions only — habits have no category
   for it to filter on.
