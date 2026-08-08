@@ -10,6 +10,14 @@ All notable changes to Habitus. Newest first.
   would orphan every existing log behind a cosmetic change.
 
 ### Added
+- **A week strip across the top of the habit list**, with weekday, date and a ring showing
+  how much of each day was done. Picking a day moves **every** habit to it at once, and the
+  card above retitles to that date — so fixing up Wednesday is one click, not one per habit.
+  Arrows step week by week; "Today" jumps back.
+- The squares on each row are now the seven days of that week, in the same columns as the
+  header above them, so it's obvious which day each square is. Future days are greyed and
+  can't be logged. (The 30-day strip is still in a habit's detail view.)
+
 - **Habits can be linked to a Focus category**, so a tracked hour isn't logged twice. Pick
   the category in the habit editor, or hit "Link … to a habit" straight from the Focus tab,
   which now says underneath the timer which habit the current category feeds.

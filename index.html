@@ -1919,16 +1919,79 @@
       padding-bottom: 40px;
     }
 
-    .habit-row {
+    /* The week header and every habit row share this grid, so a square always sits under
+       the date it belongs to — the header is the row's date label. */
+    .habit-week,
+    .habit-line {
       display: grid;
-      grid-template-columns: 1fr auto;
+      /* Every track is content-independent on purpose: an `auto` end column resolved to the
+         width of a nav arrow in the header and to the width of the steppers in a row, which
+         slid the squares out from under their dates. */
+      grid-template-columns: minmax(110px, 1fr) repeat(7, 42px) 250px;
       align-items: center;
-      gap: 16px;
-      padding: 16px 0;
+      gap: 6px;
+    }
+
+    .habit-week {
+      padding-bottom: 12px;
+      margin-bottom: 4px;
       border-bottom: 1px solid var(--hairline);
     }
-    .habit-row:last-child { border-bottom: none; }
-    .habit-row.done .habit-name { color: var(--text-secondary); }
+    .habit-week-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 14px;
+    }
+
+    /* The nav arrows sit in the row's first and last cells, flanking the seven days */
+    .habit-week-nav {
+      justify-self: end;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid var(--card-border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 15px;
+      cursor: pointer;
+    }
+    .habit-week-nav:hover:not(:disabled) { color: var(--text-primary); border-color: var(--accent); }
+    .habit-week-nav:disabled { opacity: 0.25; cursor: default; }
+    .habit-week > .habit-week-nav:last-child { justify-self: start; }
+
+    .habit-week-day {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 6px 2px;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      background: transparent;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .habit-week-day:hover:not(:disabled) { background: var(--surface-1); }
+    .habit-week-day.selected {
+      border-color: var(--accent);
+      background: var(--accent-alpha);
+      color: var(--text-primary);
+    }
+    .habit-week-day.today .habit-week-date { color: var(--accent); }
+    .habit-week-day.future { opacity: 0.35; cursor: default; }
+
+    .habit-week-name { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; }
+    .habit-week-date { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+    .habit-week-ring { width: 20px; height: 20px; }
+
+    .habit-line {
+      padding: 14px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .habit-line:last-child { border-bottom: none; }
+    .habit-line.done .habit-name { color: var(--text-secondary); }
 
     .habit-main { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
 
@@ -1974,19 +2037,21 @@
       transition: width 200ms ease;
     }
 
-    /* Day strip doubles as the date picker: clicking a square moves the stepper to that
-       day, which is the whole point — habits get logged late as often as on time. */
-    .habit-days { display: flex; gap: 3px; }
+    /* Each square is a day of the week above it, and clicking one moves *every* habit to
+       that day — habits get logged late as often as on time. */
     .habit-day {
-      width: 14px;
-      height: 14px;
-      border-radius: 3px;
+      height: 30px;
+      border-radius: 8px;
       border: 1px solid transparent;
       background: var(--surface-1);
       padding: 0;
       cursor: pointer;
+      transition: border-color 160ms ease;
     }
+    .habit-day:hover:not(:disabled) { border-color: var(--card-border); }
     .habit-day.editing { border-color: var(--accent); }
+    .habit-day.today { box-shadow: inset 0 0 0 1px var(--card-border); }
+    .habit-day.future { opacity: 0.3; cursor: default; }
 
     .habit-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
@@ -2048,9 +2113,18 @@
     }
     .habit-check.on { color: #fff; border-color: transparent; }
 
-    @media (max-width: 560px) {
-      .habit-row { grid-template-columns: 1fr; }
-      .habit-controls { justify-content: flex-end; }
+    /* Narrow: the seven day columns survive, and the name and controls span the full width
+       above and below them — the alignment between header and squares is the point. */
+    @media (max-width: 700px) {
+      .habit-week,
+      .habit-line { grid-template-columns: repeat(7, 1fr); gap: 4px; }
+      .habit-main,
+      .habit-controls { grid-column: 1 / -1; }
+      .habit-controls { justify-content: flex-end; margin-top: 8px; }
+      .habit-week-nav { grid-row: 2; }
+      .habit-week > .habit-week-nav:first-child { grid-column: 1; justify-self: start; }
+      .habit-week > .habit-week-nav:last-child { grid-column: 7; justify-self: end; }
+      .habit-week-day { grid-row: 1; }
     }
 
     .focus-habit-link {
@@ -2420,12 +2494,16 @@
             <button class="btn-small primary" id="addHabitBtn" style="margin-bottom: 16px;">+ New habit</button>
           </div>
           <div class="stat-number" id="habitsDoneCount">0 / 0</div>
-          <div class="stat-label">habits complete today</div>
+          <div class="stat-label" id="habitsDoneLabel">habits complete today</div>
           <div class="stacked-bar" id="habitsDoneBar" style="margin-top: 16px;"></div>
         </div>
 
         <div class="card">
-          <div class="card-title">Habits</div>
+          <div class="habit-week-header">
+            <div class="card-title" id="habitWeekMonth" style="margin: 0;"></div>
+            <button class="btn-small" id="habitWeekToday" style="display: none;">Today</button>
+          </div>
+          <div class="habit-week" id="habitWeekStrip"></div>
           <div id="habitsList"></div>
         </div>
 
@@ -4223,10 +4301,47 @@
 
       // ===== HABITS VIEW =====
       habits: {
-        // Which day each row's stepper is currently editing. Deliberately not persisted:
-        // opening the app should always land you on today, not on some past day you were
-        // patching up last night.
-        editingDay: {},
+        // The one day every row is logging against, picked in the week strip. Deliberately
+        // not persisted: opening the app should always land you on today, not on some past
+        // day you were patching up last night.
+        selectedDay: habitDayKey(new Date()),
+
+        selectedDate() {
+          // 'T00:00' keeps the parse local; a bare date string is read as UTC and can land
+          // on the day before for anyone west of it.
+          return new Date(this.selectedDay + 'T00:00');
+        },
+
+        selectedLabel() {
+          return this.selectedDate().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+        },
+
+        // Monday–Sunday, matching habitPeriodDays' weeks and the Insights weekday grid
+        weekDays() {
+          const monday = this.selectedDate();
+          monday.setHours(0, 0, 0, 0);
+          monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+          return Array.from({ length: 7 }, (_, i) => {
+            const d = new Date(monday);
+            d.setDate(monday.getDate() + i);
+            return d;
+          });
+        },
+
+        selectDay(key) {
+          if (key > habitDayKey(new Date())) return;   // a day that hasn't happened has nothing to log
+          this.selectedDay = key;
+          this.render();
+        },
+
+        shiftWeek(weeks) {
+          const d = this.selectedDate();
+          d.setDate(d.getDate() + weeks * 7);
+          const todayKey = habitDayKey(new Date());
+          // Stepping forward past today lands on today rather than refusing to move
+          this.selectedDay = habitDayKey(d) > todayKey ? todayKey : habitDayKey(d);
+          this.render();
+        },
 
         // Writes go to the raw logs; reads go through entriesFor/minutesFor, which fold in
         // whatever the linked category's focus sessions contributed.
@@ -4539,7 +4654,10 @@
           const list = document.getElementById('habitsList');
           if (!list) return;
           list.innerHTML = '';
-          const today = new Date();
+          const selected = this.selectedDate();
+          const isToday = this.selectedDay === habitDayKey(new Date());
+
+          this.renderWeekStrip();
 
           if (!store.habits.length) {
             list.appendChild(Object.assign(document.createElement('div'), {
@@ -4548,14 +4666,20 @@
             }));
           }
 
+          // Everything on this page reports the *selected* day, not today — otherwise
+          // picking Tuesday would edit Tuesday while the numbers still described today.
           let complete = 0;
           store.habits.forEach(habit => {
             const entries = this.entriesFor(habit);
-            const progress = habitProgress(habit, entries, today);
+            const progress = habitProgress(habit, entries, selected);
             if (progress.complete) complete++;
-            list.appendChild(this.renderRow(habit, entries, progress, today));
+            list.appendChild(this.renderRow(habit, entries, progress, selected));
           });
 
+          const title = document.getElementById('habitsTodayTitle');
+          if (title) title.textContent = isToday ? 'Today' : this.selectedLabel();
+          const doneLabel = document.getElementById('habitsDoneLabel');
+          if (doneLabel) doneLabel.textContent = isToday ? 'habits complete today' : 'habits complete that day';
           document.getElementById('habitsDoneCount').textContent = `${complete} / ${store.habits.length}`;
           const bar = document.getElementById('habitsDoneBar');
           bar.innerHTML = '';
@@ -4566,9 +4690,92 @@
           this.renderOverview();
         },
 
-        renderRow(habit, entries, progress, today) {
+        // The week header, shared by every row: weekday, date, and a ring showing how much
+        // of that day was done. Selecting here moves every habit at once.
+        renderWeekStrip() {
+          const strip = document.getElementById('habitWeekStrip');
+          if (!strip) return;
+          strip.innerHTML = '';
+          const todayKey = habitDayKey(new Date());
+
+          const prev = Object.assign(document.createElement('button'), {
+            className: 'habit-week-nav', textContent: '‹', title: 'Previous week',
+          });
+          prev.addEventListener('click', () => this.shiftWeek(-1));
+          strip.appendChild(prev);
+
+          this.weekDays().forEach(d => {
+            const key = habitDayKey(d);
+            const future = key > todayKey;
+            const done = future ? 0 : store.habits.filter(h =>
+              habitProgress(h, this.entriesFor(h), d).complete).length;
+            const fraction = store.habits.length ? done / store.habits.length : 0;
+
+            const cell = document.createElement('button');
+            cell.className = 'habit-week-day'
+              + (key === this.selectedDay ? ' selected' : '')
+              + (key === todayKey ? ' today' : '')
+              + (future ? ' future' : '');
+            cell.title = future ? 'Not yet' : `${done} of ${store.habits.length} complete`;
+            cell.append(
+              Object.assign(document.createElement('span'), {
+                className: 'habit-week-name',
+                textContent: d.toLocaleDateString(undefined, { weekday: 'short' }),
+              }),
+              Object.assign(document.createElement('span'), {
+                className: 'habit-week-date', textContent: String(d.getDate()),
+              }),
+              this.dayRing(fraction),
+            );
+            if (future) cell.disabled = true;
+            else cell.addEventListener('click', () => this.selectDay(key));
+            strip.appendChild(cell);
+          });
+
+          const next = Object.assign(document.createElement('button'), {
+            className: 'habit-week-nav', textContent: '›', title: 'Next week',
+          });
+          next.disabled = this.weekDays().some(d => habitDayKey(d) === todayKey);
+          next.addEventListener('click', () => this.shiftWeek(1));
+          strip.appendChild(next);
+
+          const month = document.getElementById('habitWeekMonth');
+          if (month) {
+            const days = this.weekDays();
+            const span = days[0].getMonth() === days[6].getMonth()
+              ? days[0].toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+              : `${days[0].toLocaleDateString(undefined, { month: 'short' })} – ${days[6].toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`;
+            month.textContent = span;
+          }
+          const todayBtn = document.getElementById('habitWeekToday');
+          if (todayBtn) todayBtn.style.display = this.selectedDay === todayKey ? 'none' : '';
+        },
+
+        dayRing(fraction) {
+          const NS = 'http://www.w3.org/2000/svg';
+          const svg = document.createElementNS(NS, 'svg');
+          svg.setAttribute('class', 'habit-week-ring');
+          svg.setAttribute('viewBox', '0 0 32 32');
+          const track = document.createElementNS(NS, 'circle');
+          const arc = document.createElementNS(NS, 'circle');
+          [track, arc].forEach(c => {
+            c.setAttribute('cx', '16'); c.setAttribute('cy', '16'); c.setAttribute('r', '13');
+            c.setAttribute('fill', 'none'); c.setAttribute('stroke-width', '3');
+          });
+          track.setAttribute('stroke', 'var(--surface-1)');
+          const circumference = 2 * Math.PI * 13;
+          arc.setAttribute('stroke', 'var(--accent)');
+          arc.setAttribute('stroke-linecap', 'round');
+          arc.setAttribute('stroke-dasharray', String(circumference));
+          arc.setAttribute('stroke-dashoffset', String(circumference * (1 - fraction)));
+          arc.setAttribute('transform', 'rotate(-90 16 16)');
+          svg.append(track, arc);
+          return svg;
+        },
+
+        renderRow(habit, entries, progress, selected) {
           const row = document.createElement('div');
-          row.className = 'habit-row' + (progress.complete ? ' done' : '');
+          row.className = 'habit-line' + (progress.complete ? ' done' : '');
 
           const main = document.createElement('div');
           main.className = 'habit-main';
@@ -4586,7 +4793,13 @@
           nameBtn.addEventListener('click', () => this.openDetail(habit));
           head.appendChild(nameBtn);
 
-          const when = habit.period === 'week' ? 'this week' : 'today';
+          // Streak and 30-day rate are always "as of now"; only the progress line follows
+          // the selected day, because that's the number the controls are about to change.
+          const today = new Date();
+          const isToday = this.selectedDay === habitDayKey(today);
+          const when = habit.period === 'week'
+            ? (isToday ? 'this week' : 'that week')
+            : (isToday ? 'today' : 'on ' + this.selectedDate().toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
           const unit = habit.unit ? ' ' + habit.unit : '';
           const meta = Object.assign(document.createElement('span'), {
             className: 'habit-meta' + (progress.complete ? ' complete' : ''),
@@ -4621,13 +4834,13 @@
           // Time is the second story on a habit that counts something else — kept to one
           // chip, because the row's job is still "log the thing in one tap"
           if (this.tracksTime(habit) && habit.kind !== 'duration') {
-            const todayMinutes = Math.round(this.minutesFor(habit)[habitDayKey(today)] || 0);
-            if (todayMinutes) {
+            const dayMinutes = Math.round(this.minutesFor(habit)[this.selectedDay] || 0);
+            if (dayMinutes) {
               const cat = store.categories.find(c => c.id === habit.catId);
               head.appendChild(Object.assign(document.createElement('span'), {
                 className: 'habit-meta',
-                textContent: `⏱ ${formatMinutes(todayMinutes)}`,
-                title: cat ? `Today's time, including focus sessions in ${cat.name}` : "Today's logged time",
+                textContent: `⏱ ${formatMinutes(dayMinutes)}`,
+                title: cat ? `Time on ${this.selectedLabel()}, including focus sessions in ${cat.name}` : `Logged time on ${this.selectedLabel()}`,
               }));
             }
           }
@@ -4650,9 +4863,9 @@
           barEl.appendChild(fill);
           main.appendChild(barEl);
 
-          main.appendChild(this.renderDays(habit, entries, today));
           row.appendChild(main);
-          row.appendChild(this.renderControls(habit, entries, today));
+          this.renderDays(habit, entries).forEach(cell => row.appendChild(cell));
+          row.appendChild(this.renderControls(habit, entries));
           return row;
         },
 
@@ -4897,44 +5110,44 @@
           return row;
         },
 
-        // The last 14 days, oldest first. Each square is also the day picker for the row.
-        renderDays(habit, entries, today) {
-          const strip = document.createElement('div');
-          strip.className = 'habit-days';
-          const editing = this.editingDay[habit.id] || habitDayKey(today);
-
-          for (let i = 13; i >= 0; i--) {
-            const d = new Date(today);
-            d.setHours(0, 0, 0, 0);
-            d.setDate(d.getDate() - i);
+        // One cell per day of the selected week, in the same grid columns as the header
+        // above — the header is what tells you which date each square is, so a square
+        // never has to label itself.
+        renderDays(habit, entries) {
+          const todayKey = habitDayKey(new Date());
+          return this.weekDays().map(d => {
             const key = habitDayKey(d);
             const value = entries[key] || 0;
             const cell = document.createElement('button');
-            cell.className = 'habit-day' + (key === editing ? ' editing' : '');
+            cell.className = 'habit-day'
+              + (key === this.selectedDay ? ' editing' : '')
+              + (key === todayKey ? ' today' : '')
+              + (key > todayKey ? ' future' : '');
             cell.title = `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ''}`;
             if (value) {
               cell.style.background = habit.color;
               cell.style.opacity = this.dayAlpha(habit, value).toFixed(2);
             }
-            cell.addEventListener('click', () => {
-              this.editingDay[habit.id] = key;
-              this.render();
-            });
-            strip.appendChild(cell);
-          }
-          return strip;
+            if (key > todayKey) {
+              cell.disabled = true;   // nothing to log on a day that hasn't happened
+            } else {
+              cell.addEventListener('click', () => this.selectDay(key));
+            }
+            return cell;
+          });
         },
 
-        renderControls(habit, entries, today) {
+        renderControls(habit, entries) {
           const wrap = document.createElement('div');
           wrap.className = 'habit-controls';
-          const dayKey = this.editingDay[habit.id] || habitDayKey(today);
+          const dayKey = this.selectedDay;
           const value = entries[dayKey] || 0;
+          const isToday = dayKey === habitDayKey(new Date());
 
           if (habit.kind === 'check') {
             const btn = Object.assign(document.createElement('button'), {
               className: 'habit-check' + (value ? ' on' : ''), textContent: '✓',
-              title: dayKey === habitDayKey(today) ? 'Mark done today' : `Mark done on ${dayKey}`,
+              title: isToday ? 'Mark done today' : `Mark done on ${this.selectedLabel()}`,
             });
             if (value) btn.style.background = habit.color;
             btn.addEventListener('click', () => this.setValue(habit, dayKey, value ? 0 : 1));
@@ -4963,20 +5176,6 @@
             });
           }
 
-          // Only say which day you're editing when it isn't today — the common case needs no label
-          if (dayKey !== habitDayKey(today)) {
-            const back = Object.assign(document.createElement('button'), {
-              className: 'btn-small',
-              // 'T00:00' keeps this local; a bare date string is parsed as UTC and can render as the day before
-              textContent: new Date(dayKey + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-              title: 'Back to today',
-            });
-            back.addEventListener('click', () => {
-              delete this.editingDay[habit.id];
-              this.render();
-            });
-            wrap.appendChild(back);
-          }
           return wrap;
         },
       },
@@ -7097,6 +7296,9 @@
       document.getElementById('addHabitBtn')?.addEventListener('click', () => ui.habits.openEditor(null));
       document.getElementById('habitsSeeInsightsBtn')?.addEventListener('click', () => {
         document.querySelector('[data-view="insights"]')?.click();
+      });
+      document.getElementById('habitWeekToday')?.addEventListener('click', () => {
+        ui.habits.selectDay(habitDayKey(new Date()));
       });
       document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());

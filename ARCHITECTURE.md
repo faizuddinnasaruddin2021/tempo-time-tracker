@@ -178,9 +178,25 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitMergedEntries(habit, manual, sessionMinutes)` | The read view: hand-logged plus linked focus minutes |
 | `habitTimeEntries(habit, manualMinutes, sessionMinutes, merged)` | The time track for habits that count something else |
 
-The 14-day strip on each row is also the day picker: clicking a square points that row's
-stepper at that day (`ui.habits.editingDay`, deliberately not persisted). Backfilling is
-the common case for habits, so it shouldn't need a modal.
+### The week strip and the selected day
+
+One day is selected for the whole page (`ui.habits.selectedDay`, deliberately not persisted
+— the app should open on today, not on the day you were patching up last night). The week
+header picks it, and every row logs against it. Backfilling is the common case for habits,
+so it shouldn't need a modal, and it shouldn't have to be repeated per habit either.
+
+`.habit-week` and `.habit-line` **share one grid template**, which is why a square sits
+under the date it belongs to — the header is the row's date label, so the squares don't
+need labels of their own. Every track in that template is content-independent on purpose:
+an `auto` end column resolved to the width of a nav arrow in the header and to the width of
+the steppers in a row, sliding the squares out from under their dates.
+
+Future days are disabled everywhere (there's nothing to log on a day that hasn't happened),
+and stepping the week forward past today lands on today rather than refusing to move.
+
+Streak and the 30-day rate on each row stay "as of now" no matter which day is selected;
+only the progress line and the controls follow the selection, because that's the number the
+controls are about to change.
 
 ### Habit analysis
 
