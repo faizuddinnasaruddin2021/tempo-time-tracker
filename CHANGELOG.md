@@ -5,6 +5,11 @@ All notable changes to Habitus. Newest first.
 ## [Unreleased] — 2026-08-08
 
 ### Changed
+- **"Group" now means habits only.** The session-side slicing is called an **axis**
+  everywhere: "Axis" in the lens bar, "Manage axes…", "Add axis", and the no-value bucket is
+  **Unassigned** rather than "Ungrouped". Saved filters migrate, so anything you had hidden
+  stays hidden. Your one seeded axis still literally named "Group" is renamed to "Context"
+  once — rename it to whatever you like and it won't be touched again.
 - **Renamed to Habitus.** The app grew a habits track, and "Tempo" only described the timer
   half. Your data is untouched: the `localStorage` key stays `tempo.v1`, because renaming it
   would orphan every existing log behind a cosmetic change.

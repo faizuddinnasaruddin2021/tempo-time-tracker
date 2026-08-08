@@ -2724,7 +2724,7 @@
         <!-- Habits: a separate track from sessions, so the lens above doesn't touch these -->
         <div class="card">
           <div class="card-title">Habits — Last 30 Days</div>
-          <div class="insights-note">The "group by" filter above slices <em>sessions</em>. Habit groups are a separate thing, below.</div>
+          <div class="insights-note">The axis filter above slices <em>sessions</em>. Habit groups are a separate thing, below.</div>
           <div id="insightsHabits"></div>
         </div>
 
@@ -2786,7 +2786,7 @@
 
         <!-- Group rollup — groups are editable right here -->
         <div class="card">
-          <div class="card-title" id="insightsGroupTitle">By Group</div>
+          <div class="card-title" id="insightsGroupTitle">By Axis</div>
           <div id="insightsGroupLeaderboard"></div>
           <div class="group-editor" id="insightsGroupEditor"></div>
         </div>
@@ -2960,12 +2960,12 @@
         <div id="catGroupLists" hidden></div>
         <div class="cat-rows" id="categoryList"></div>
 
-        <!-- Grouping axes: the second half of this modal, because a grouping is
+        <!-- Grouping axes: the second half of this modal, because an axis is
              meaningless until there are categories to put in it -->
         <div class="group-editor" id="axisManager"></div>
         <div class="cat-add" style="margin-top: 12px;">
-          <input type="text" class="form-input" id="newAxisName" placeholder="New grouping (e.g. Context)" autocomplete="off">
-          <button class="btn-small primary" id="addAxisBtn">Add grouping</button>
+          <input type="text" class="form-input" id="newAxisName" placeholder="New axis (e.g. Context)" autocomplete="off">
+          <button class="btn-small primary" id="addAxisBtn">Add axis</button>
         </div>
         <div class="modal-actions" style="margin-top: 20px;">
           <button class="btn-primary" id="categoryModalCloseBtn2" style="width: 100%; flex: 1;">Done</button>
@@ -3155,7 +3155,7 @@
       categories: DEFAULT_CATEGORIES,
       // Grouping axes: independent ways to slice the same categories. A category holds one
       // value per axis in cat.groups[axisId]. 'group' is the original single-group field.
-      axes: [{ id: 'group', name: 'Group' }],
+      axes: [{ id: 'group', name: 'Context' }],   // the id stays 'group' — it's a persisted key
       // The lens every view looks through: which axis is active, and which of its values
       // are hidden (per axis, so switching back restores what you'd hidden there).
       lens: { axis: 'group', hidden: {} },
@@ -3223,16 +3223,18 @@
     // Categories roll up into groups along one or more independent axes ("Context",
     // "Type", …). Exactly one axis is active at a time; hiding values on it filters every
     // view, so "don't show me office work" is one click rather than a per-card setting.
-    const UNGROUPED = 'Ungrouped';
+    // The bucket for categories carrying no value on the current axis. Renamed from
+    // 'Ungrouped' when habits took that word; normalizeStore migrates saved filters.
+    const UNGROUPED = 'Unassigned';
 
     const activeAxis = () => store.axes.find(a => a.id === store.lens.axis) || store.axes[0];
 
-    // A category's value on an axis. Blank/missing collapses to Ungrouped so every
+    // A category's value on an axis. Blank/missing collapses to Unassigned so every
     // category always lands in exactly one bucket — no session ever falls out of a rollup.
     const groupOf = (catId, axisId = store.lens.axis) =>
       store.categories.find(c => c.id === catId)?.groups?.[axisId]?.trim() || UNGROUPED;
 
-    // Every value in use on an axis, Ungrouped last so it doesn't head the filter row
+    // Every value in use on an axis, Unassigned last so it doesn't head the filter row
     const axisValues = (axisId = store.lens.axis) => {
       const vals = [...new Set(store.categories.map(c => groupOf(c.id, axisId)))];
       return vals.filter(v => v !== UNGROUPED).sort().concat(vals.includes(UNGROUPED) ? [UNGROUPED] : []);
@@ -3779,13 +3781,28 @@
         if (typeof h.group !== 'string') h.group = '';   // '' is the ungrouped bucket
       });
       if (!Array.isArray(store.settings.habitCollapsed)) store.settings.habitCollapsed = [];
-      if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Group' }];
+
+      if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Context' }];
+
+      // "Group" now belongs to habits, so the seeded session axis gives the word up. Runs
+      // once, only on the untouched default name, and never over an existing "Context" —
+      // rename the axis to anything you like and this won't touch it again.
+      if (store.settings && !store.settings.axisRenamed) {
+        const seeded = store.axes.find(a => a.id === 'group' && a.name === 'Group');
+        if (seeded && !store.axes.some(a => a.name === 'Context')) seeded.name = 'Context';
+        store.settings.axisRenamed = true;
+      }
       store.categories.forEach(c => {
         if (!c.groups) c.groups = {};
         if (c.group && !c.groups.group) c.groups.group = c.group;   // legacy `cat.group`
       });
       if (!store.lens || typeof store.lens !== 'object') store.lens = { axis: store.axes[0].id, hidden: {} };
       if (!store.lens.hidden || typeof store.lens.hidden !== 'object') store.lens.hidden = {};
+      // A filter saved under the bucket's old name would quietly stop hiding anything
+      Object.keys(store.lens.hidden).forEach(axisId => {
+        const values = store.lens.hidden[axisId];
+        if (Array.isArray(values)) store.lens.hidden[axisId] = values.map(v => v === 'Ungrouped' ? UNGROUPED : v);
+      });
       if (!store.axes.some(a => a.id === store.lens.axis)) store.lens.axis = store.axes[0].id;
     }
 
@@ -4362,7 +4379,7 @@
           bar.innerHTML = '';
 
           bar.appendChild(Object.assign(document.createElement('span'), {
-            className: 'lens-label', textContent: 'Group by',
+            className: 'lens-label', textContent: 'Axis',
           }));
 
           const select = document.createElement('select');
@@ -4376,7 +4393,7 @@
           });
           const manage = document.createElement('option');
           manage.value = '__manage';
-          manage.textContent = 'Manage groupings…';
+          manage.textContent = 'Manage axes…';
           select.appendChild(manage);
           select.addEventListener('change', () => {
             if (select.value === '__manage') {
@@ -7379,7 +7396,7 @@
           const container = document.getElementById('axisManager');
           if (!container) return;
 
-          container.innerHTML = '<div class="group-editor-title">Groupings</div>';
+          container.innerHTML = '<div class="group-editor-title">Axes</div>';
 
           store.axes.forEach(axis => {
             const row = document.createElement('div');
@@ -7409,7 +7426,7 @@
             const del = document.createElement('button');
             del.className = 'session-action-btn';
             del.textContent = '✕';
-            del.title = 'Delete grouping';
+            del.title = 'Delete axis';
             // The last axis can't go — the lens has to have something to group by
             del.disabled = store.axes.length <= 1;
             del.style.opacity = del.disabled ? '0.3' : '';
@@ -7427,7 +7444,7 @@
               ui.renderLensBars();
               this.openCategoryModal();
               refreshAll();
-              showToast(`Deleted grouping "${axis.name}"`, () => {
+              showToast(`Deleted axis "${axis.name}"`, () => {
                 store.axes.splice(index, 0, axis);
                 store.categories.forEach(c => {
                   if (values[c.id]) (c.groups ||= {})[axis.id] = values[c.id];

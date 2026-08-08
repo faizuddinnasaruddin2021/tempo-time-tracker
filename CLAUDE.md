@@ -5,7 +5,7 @@ A habit tracker and pomodoro timer (the name is habit + focus). **The whole appl
 manager. The `localStorage` key is still `tempo.v1` from the app's earlier name; leave it.
 
 **Read [ARCHITECTURE.md](ARCHITECTURE.md) before editing.** It covers the data model, the
-habits track, the grouping-axis/lens system, where things live in the file, and the
+habits track, the axis/lens system, where things live in the file, and the
 conventions.
 
 The things most likely to trip you up:

@@ -38,7 +38,7 @@ Everything lives in one `store` object, serialised to `localStorage` under the k
 ```js
 store = {
   categories: [{ id, name, color, groups: { [axisId]: 'value' } }],
-  axes:       [{ id, name }],              // grouping dimensions — see below
+  axes:       [{ id, name }],              // slicing dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
   habits:     [{ id, name, color, kind, target, unit, period, catId, trackTime, group }],
@@ -65,12 +65,19 @@ persisted field means adding a line there. Structural migration lives in
 and `cloudSync.applyRemote()` — because a second device may still be running an older
 build and push you a store without the new fields.
 
-## Grouping axes and the lens
+## Axes and the lens
 
 This is the least obvious part of the app, and the part most likely to be misunderstood.
 
+**Vocabulary:** sessions are sliced by **axes**; habits are filed under **groups**. They
+used to share the word "group" and the collision confused everyone, so the session side
+gave it up. The persisted keys did *not* change — `cat.groups[axisId]` and the axis id
+`'group'` are still called that in the store, because renaming a saved key orphans data.
+Only the UI copy and the no-value bucket (`'Ungrouped'` → `'Unassigned'`, migrated in
+`normalizeStore()`) moved.
+
 A category has a `name` and a `color`. On top of that, it carries a value on each
-**grouping axis** — an independent way of slicing the same set of categories:
+**axis** — an independent way of slicing the same set of categories:
 
 ```
 Category "Standup":  Context = Office,  Type = Admin
@@ -108,14 +115,14 @@ it should reflect real elapsed time regardless of what's filtered out.
 | Helper | Does |
 |---|---|
 | `activeAxis()` | The axis object currently selected |
-| `groupOf(catId, axisId?)` | A category's value on an axis; blank → `'Ungrouped'` |
-| `axisValues(axisId?)` | Every value in use on an axis, `Ungrouped` sorted last |
+| `groupOf(catId, axisId?)` | A category's value on an axis; blank → `'Unassigned'` |
+| `axisValues(axisId?)` | Every value in use on an axis, `Unassigned` sorted last |
 | `hiddenValues(axisId?)` | The excluded values for an axis |
 | `visibleSessions()` | Sessions surviving the lens — **use this** |
 | `setLensAxis(id)` / `toggleLensValue(v)` | Mutate the lens, save, re-render everything |
 
 Every category always lands in exactly one bucket per axis (blank collapses to
-`Ungrouped`), so no session can fall out of a rollup and totals always reconcile.
+`Unassigned`), so no session can fall out of a rollup and totals always reconcile.
 
 ### UI surfaces
 
@@ -295,7 +302,7 @@ Roughly in file order:
 |---|---|
 | `<head>` | CDN links, then all CSS in one `<style>`. CSS custom properties at the top drive both themes. |
 | `<body>` | Top bar, then four sibling `.view` divs (`habitsView`, `focusView`, `calendarView`, `insightsView`) — only one has `.active`. Then the modals. |
-| `INITIALIZATION & STORAGE` | `store` defaults, grouping helpers, `bucketByHour()`, the habit helpers, `refreshAll()`, `showToast()`, `loadStore()`/`saveStore()` |
+| `INITIALIZATION & STORAGE` | `store` defaults, axis helpers, `bucketByHour()`, the habit helpers, `refreshAll()`, `showToast()`, `loadStore()`/`saveStore()` |
 | `CLOUD SYNC` | `cloudSync` — Firebase auth + Firestore mirror. Inert unless `FIREBASE_CONFIG` is set. |
 | `TIMER MODULE` | `timer` — the pomodoro state machine |
 | `HELPER FUNCTIONS` | streaks, `formatMinutes()` |
