@@ -2333,6 +2333,9 @@
     <!-- Habits View -->
     <div id="habitsView" class="view active">
       <div class="habits-grid">
+        <!-- Quick read on how it's going; the full breakdown lives in Insights -->
+        <div class="insights-row" id="habitsOverview" style="grid-template-columns: repeat(3, 1fr);"></div>
+
         <div class="card">
           <div style="display: flex; justify-content: space-between; align-items: center;">
             <div class="card-title" id="habitsTodayTitle">Today</div>
@@ -2348,8 +2351,6 @@
           <div id="habitsList"></div>
         </div>
 
-        <!-- Quick read on how it's going; the full breakdown lives in Insights -->
-        <div class="insights-row" id="habitsOverview" style="grid-template-columns: repeat(3, 1fr);"></div>
         <div style="text-align: center;">
           <button class="btn-small" id="habitsSeeInsightsBtn">See full habit insights →</button>
         </div>
