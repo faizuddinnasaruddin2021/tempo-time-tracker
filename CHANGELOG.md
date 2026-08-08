@@ -2,7 +2,20 @@
 
 All notable changes to Tempo. Newest first.
 
-## [Unreleased] — 2026-08-05
+## [Unreleased] — 2026-08-08
+
+### Added
+- **Habits, and they're now the landing view.** Timing work is a poor fit for anything you
+  want to record *after* the fact, so habits are a separate, hand-logged track: mark a
+  habit done, count 10 pages, log 30 minutes. Each one has a target per day or per week
+  (so "gym 3x/week" works), a progress bar, a streak, and a 14-day strip.
+- Clicking any square in that 14-day strip points the row's stepper at that day, so
+  logging yesterday's run takes one click and no modal.
+- Habits are created and edited from **+ New habit** or by clicking a habit's name;
+  deleting one offers Undo and restores its full history.
+- View shortcuts shifted down one: **1** Habits, **2** Focus, **3** Calendar, **4** Insights.
+
+## [Previously unreleased] — 2026-08-05
 
 ### Added
 - **Multiple grouping axes.** A category no longer has one group — it carries a value on

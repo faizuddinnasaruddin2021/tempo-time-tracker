@@ -54,3 +54,60 @@ assert.equal(total(bucketByHour(sessions)), raw);
 assert.deepEqual(bucketByHour([{ start: at(0, 9), end: at(0, 9) }]), {});
 
 console.log('bucketByHour: 7 checks passed');
+
+// ---- Habit periods, progress and streaks -------------------------------------------
+const hsrc = html.match(/\/\/ BEGIN habitMath.*\n([\s\S]*?)\/\/ END habitMath/);
+assert.ok(hsrc, 'habitMath markers not found in index.html');
+const { habitDayKey, habitPeriodDays, habitProgress, habitStreak } =
+  new Function(hsrc[1] + '; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak };')();
+
+const daily = { kind: 'count', target: 10, period: 'day' };
+const weekly = { kind: 'check', target: 3, period: 'week' };
+const day = (y, m, d) => new Date(y, m - 1, d);
+
+// 1. Day keys are local, not UTC — a late-evening log stays on its own date
+assert.equal(habitDayKey(new Date(2026, 7, 8, 23, 30)), '2026-08-08');
+assert.equal(habitDayKey(new Date(2026, 0, 1, 0, 5)), '2026-01-01');
+
+// 2. A weekly period is the Monday–Sunday week containing the date, whichever day you ask on
+const week = habitPeriodDays(weekly, day(2026, 8, 8));      // a Saturday
+assert.deepEqual(week, ['2026-08-03', '2026-08-04', '2026-08-05', '2026-08-06', '2026-08-07', '2026-08-08', '2026-08-09']);
+assert.deepEqual(habitPeriodDays(weekly, day(2026, 8, 9)), week, 'Sunday belongs to the week that just ended');
+assert.deepEqual(habitPeriodDays(weekly, day(2026, 8, 10)), habitPeriodDays(weekly, day(2026, 8, 16)));
+assert.deepEqual(habitPeriodDays(daily, day(2026, 8, 8)), ['2026-08-08']);
+
+// 3. Weekly progress sums the whole week; daily progress sees only its own day
+assert.deepEqual(
+  habitProgress(weekly, { '2026-08-04': 1, '2026-08-06': 1, '2026-08-10': 1 }, day(2026, 8, 8)),
+  { done: 2, target: 3, complete: false });
+assert.equal(habitProgress(weekly, { '2026-08-04': 1, '2026-08-06': 1, '2026-08-08': 1 }, day(2026, 8, 8)).complete, true);
+assert.equal(habitProgress(daily, { '2026-08-07': 40, '2026-08-08': 10 }, day(2026, 8, 8)).done, 10);
+assert.equal(habitProgress(daily, {}, day(2026, 8, 8)).done, 0, 'a missing day is 0, not NaN');
+assert.equal(habitProgress({ ...daily, target: 0 }, { '2026-08-08': 1 }, day(2026, 8, 8)).target, 1,
+  'a zero target would make everything trivially complete');
+
+// 4. An unfinished today doesn't break the streak — it just doesn't extend it yet
+const log = { '2026-08-05': 10, '2026-08-06': 10, '2026-08-07': 10 };
+assert.equal(habitStreak(daily, log, day(2026, 8, 8)), 3, 'today still pending: yesterday-back counts');
+assert.equal(habitStreak(daily, { ...log, '2026-08-08': 10 }, day(2026, 8, 8)), 4, 'today done: today counts too');
+assert.equal(habitStreak(daily, { ...log, '2026-08-08': 4 }, day(2026, 8, 8)), 3, 'short of target is not done');
+
+// 5. A missed day ends the streak there rather than counting through the gap
+assert.equal(habitStreak(daily, { '2026-08-03': 10, '2026-08-05': 10, '2026-08-06': 10, '2026-08-07': 10 }, day(2026, 8, 8)), 3,
+  'stops at the Aug 4 gap instead of counting Aug 3 as well');
+assert.equal(habitStreak(daily, { '2026-08-05': 10, '2026-08-06': 10 }, day(2026, 8, 8)), 0,
+  'yesterday missed, so there is no live streak left to protect');
+assert.equal(habitStreak(daily, {}, day(2026, 8, 8)), 0);
+
+// 6. Weekly streaks step a week at a time
+assert.equal(habitStreak(weekly, {
+  '2026-07-20': 1, '2026-07-21': 1, '2026-07-22': 1,   // week of Jul 20
+  '2026-07-27': 1, '2026-07-28': 1, '2026-07-29': 1,   // week of Jul 27
+  '2026-08-03': 1, '2026-08-04': 1,                    // this week: 2 of 3, not yet
+}, day(2026, 8, 8)), 2);
+
+// 7. DST doesn't drop or duplicate a day in a week (US spring forward: Mar 8 2026)
+assert.deepEqual(habitPeriodDays(weekly, day(2026, 3, 10)),
+  ['2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13', '2026-03-14', '2026-03-15']);
+
+console.log('habitMath: 7 checks passed');

@@ -5,7 +5,7 @@ editing `index.html`; it will save you from re-deriving the parts that aren't ob
 
 ## The shape of the thing
 
-**Tempo is one file.** `index.html` (~5,900 lines) holds the markup, the CSS and every line
+**Tempo is one file.** `index.html` (~6,300 lines) holds the markup, the CSS and every line
 of JavaScript in a single inline `<script>`. There is no build step, no bundler, no package
 manager, no framework. Open the file in a browser and it runs.
 
@@ -19,7 +19,7 @@ Files in the repo:
 | File | What it is |
 |---|---|
 | `index.html` | The entire application |
-| `test.mjs` | `node test.mjs` — self-check for the heatmap's hour bucketing |
+| `test.mjs` | `node test.mjs` — self-checks for the heatmap's hour bucketing and the habit period/streak math |
 | `ARCHITECTURE.md` | This file |
 | `CHANGELOG.md` | What changed and why, newest first. Add to it. |
 | `SYNC-SETUP.md` | End-user instructions for wiring up Firebase cloud sync |
@@ -41,6 +41,8 @@ store = {
   axes:       [{ id, name }],              // grouping dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
+  habits:     [{ id, name, color, kind, target, unit, period }],   // see Habits below
+  habitLog:   { [habitId]: { 'YYYY-MM-DD': number } },
   tasks:      [{ id, text, pomodoros, done }],
   settings:   { work, short, long, longEvery, dailyGoalMin, theme, reminderOn, … },
   timer:      { mode, running, startedAt, remainingMs, sessionStartedAt, catId, … },
@@ -57,8 +59,8 @@ in Insights and Calendar is a different projection of the same session list.
 
 There is no schema version. Instead, `loadStore()` defensively fills in fields that older
 saves lack (`if (store.settings.x === undefined) store.settings.x = default`). Adding a new
-persisted field means adding a line there. Grouping-specific migration lives in
-`normalizeGrouping()`, which is **idempotent and called from two places** — `loadStore()`
+persisted field means adding a line there. Structural migration lives in
+`normalizeStore()`, which is **idempotent and called from two places** — `loadStore()`
 and `cloudSync.applyRemote()` — because a second device may still be running an older
 build and push you a store without the new fields.
 
@@ -122,6 +124,33 @@ the same state. Axes are created, renamed and deleted in the Categories modal
 (`ui.modals.renderAxisManager()`); per-category values are edited either there or in the
 Insights "Assign …" card.
 
+## Habits
+
+The landing view, and the one part of the app that has nothing to do with sessions.
+
+A habit is a name, a `kind` (`check` / `count` / `duration`), a `target` and a `period`
+(`day` / `week`). `store.habitLog[habitId][dayKey]` holds one number per day: `1` for a
+check, a count, or minutes. Zero is stored as *absence* — the key is deleted, so "never
+logged" and "logged a zero" are the same thing and the day strip has one meaning.
+
+**Habits are logged by hand and never read from sessions.** That's a deliberate decision,
+not a missing feature: a run you did without starting the timer still counts, and deriving
+the number from sessions would make the streak quietly lie. Nothing in this view calls
+`visibleSessions()`, and the lens doesn't apply to it.
+
+Four pure functions carry all the arithmetic, extracted by `test.mjs`:
+
+| Helper | Does |
+|---|---|
+| `habitDayKey(date)` | Local `YYYY-MM-DD`. **Not** `toISOString()` — that shifts the day off UTC |
+| `habitPeriodDays(habit, date)` | The day keys the habit's period covers (Mon–Sun for weekly) |
+| `habitProgress(habit, entries, date)` | `{ done, target, complete }` for the period containing `date` |
+| `habitStreak(habit, entries, today)` | Consecutive completed periods; an unfinished *current* period doesn't break it |
+
+The 14-day strip on each row is also the day picker: clicking a square points that row's
+stepper at that day (`ui.habits.editingDay`, deliberately not persisted). Backfilling is
+the common case for habits, so it shouldn't need a modal.
+
 ## Code layout inside `index.html`
 
 Roughly in file order:
@@ -129,12 +158,12 @@ Roughly in file order:
 | Region | What's there |
 |---|---|
 | `<head>` | CDN links, then all CSS in one `<style>`. CSS custom properties at the top drive both themes. |
-| `<body>` | Top bar, then three sibling `.view` divs (`focusView`, `calendarView`, `insightsView`) — only one has `.active`. Then the modals. |
-| `INITIALIZATION & STORAGE` | `store` defaults, grouping helpers, `bucketByHour()`, `refreshAll()`, `showToast()`, `loadStore()`/`saveStore()` |
+| `<body>` | Top bar, then four sibling `.view` divs (`habitsView`, `focusView`, `calendarView`, `insightsView`) — only one has `.active`. Then the modals. |
+| `INITIALIZATION & STORAGE` | `store` defaults, grouping helpers, `bucketByHour()`, the habit helpers, `refreshAll()`, `showToast()`, `loadStore()`/`saveStore()` |
 | `CLOUD SYNC` | `cloudSync` — Firebase auth + Firestore mirror. Inert unless `FIREBASE_CONFIG` is set. |
 | `TIMER MODULE` | `timer` — the pomodoro state machine |
 | `HELPER FUNCTIONS` | streaks, `formatMinutes()` |
-| `UI MODULE` | `ui.renderLensBars`, `ui.focus`, `ui.calendar`, `ui.insights`, `ui.modals` |
+| `UI MODULE` | `ui.renderLensBars`, `ui.habits`, `ui.focus`, `ui.calendar`, `ui.insights`, `ui.modals` |
 | `EVENT LISTENERS` | `setupEventListeners()`, including keyboard shortcuts |
 | `INIT` | `DOMContentLoaded` — load, wire up, render, restore a mid-flight timer |
 
@@ -185,9 +214,10 @@ genuinely absent.
 node test.mjs
 ```
 
-`test.mjs` extracts `bucketByHour` from `index.html` by sentinel comments
-(`// BEGIN bucketByHour` … `// END bucketByHour`) and asserts against it, so the test can't
-drift away from the shipped code. If you move or rename that function, keep the markers.
+`test.mjs` extracts the functions it checks from `index.html` by sentinel comments
+(`// BEGIN bucketByHour` … `// END bucketByHour`, and the same around `habitMath`) and
+asserts against them, so the tests can't drift away from the shipped code. If you move or
+rename those functions, keep the markers.
 
 There is no other test suite, by choice. Most of the app is DOM assembly where a test would
 just restate the code. For UI work, serve the file and drive it in a browser:

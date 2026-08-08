@@ -1911,6 +1911,132 @@
       padding: 28px 12px;
     }
 
+    /* ===== HABITS VIEW ===== */
+    .habits-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      padding-bottom: 40px;
+    }
+
+    .habit-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 0;
+      border-bottom: 1px solid var(--hairline);
+    }
+    .habit-row:last-child { border-bottom: none; }
+    .habit-row.done .habit-name { color: var(--text-secondary); }
+
+    .habit-main { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+
+    .habit-head {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .habit-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      align-self: center;
+    }
+
+    .habit-name {
+      background: none;
+      border: none;
+      padding: 0;
+      font: inherit;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-primary);
+      cursor: pointer;
+    }
+    .habit-name:hover { color: var(--accent); }
+
+    .habit-meta { font-size: 12px; color: var(--text-secondary); }
+    .habit-meta.complete { color: var(--cat-exercise); }
+
+    .habit-bar {
+      height: 8px;
+      border-radius: 4px;
+      background: var(--surface-1);
+      overflow: hidden;
+    }
+    .habit-bar-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width 200ms ease;
+    }
+
+    /* Day strip doubles as the date picker: clicking a square moves the stepper to that
+       day, which is the whole point — habits get logged late as often as on time. */
+    .habit-days { display: flex; gap: 3px; }
+    .habit-day {
+      width: 14px;
+      height: 14px;
+      border-radius: 3px;
+      border: 1px solid transparent;
+      background: var(--surface-1);
+      padding: 0;
+      cursor: pointer;
+    }
+    .habit-day.editing { border-color: var(--accent); }
+
+    .habit-controls { display: flex; align-items: center; gap: 8px; }
+
+    .habit-step-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--card-border);
+      background: transparent;
+      color: var(--text-primary);
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .habit-step-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+    .habit-value {
+      width: 56px;
+      text-align: center;
+      background: var(--surface-1);
+      border: 1px solid transparent;
+      border-radius: 8px;
+      padding: 6px 4px;
+      color: var(--text-primary);
+      font: inherit;
+      font-variant-numeric: tabular-nums;
+      -moz-appearance: textfield;
+    }
+    .habit-value::-webkit-outer-spin-button,
+    .habit-value::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    .habit-value:focus { outline: none; border-color: var(--accent); }
+
+    .habit-check {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      border: 1px solid var(--card-border);
+      background: transparent;
+      color: var(--text-secondary);
+      font-size: 18px;
+      cursor: pointer;
+      transition: all 160ms ease;
+    }
+    .habit-check.on { color: #fff; border-color: transparent; }
+
+    @media (max-width: 560px) {
+      .habit-row { grid-template-columns: 1fr; }
+      .habit-controls { justify-content: flex-end; }
+    }
+
     /* --- Categories modal --- */
     .cat-add {
       display: flex;
@@ -2101,7 +2227,8 @@
     <div class="wordmark">tempo<span class="period">.</span></div>
     <div style="display: flex; align-items: center; gap: 24px;">
       <div class="nav">
-        <button class="nav-pill active" data-view="focus">Focus</button>
+        <button class="nav-pill active" data-view="habits">Habits</button>
+        <button class="nav-pill" data-view="focus">Focus</button>
         <button class="nav-pill" data-view="calendar">Calendar</button>
         <button class="nav-pill" data-view="insights">Insights</button>
         <span id="streakPill" style="display: none; padding: 10px 18px; border-radius: 20px; border: 1px solid var(--card-border); background: transparent; color: var(--text-primary); font-size: 14px; font-weight: 500; align-items: center; gap: 6px;" title="Focus streak"></span>
@@ -2113,8 +2240,28 @@
 
   <!-- Main Content -->
   <div class="container">
+    <!-- Habits View -->
+    <div id="habitsView" class="view active">
+      <div class="habits-grid">
+        <div class="card">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div class="card-title" id="habitsTodayTitle">Today</div>
+            <button class="btn-small primary" id="addHabitBtn" style="margin-bottom: 16px;">+ New habit</button>
+          </div>
+          <div class="stat-number" id="habitsDoneCount">0 / 0</div>
+          <div class="stat-label">habits complete today</div>
+          <div class="stacked-bar" id="habitsDoneBar" style="margin-top: 16px;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Habits</div>
+          <div id="habitsList"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Focus View -->
-    <div id="focusView" class="view active">
+    <div id="focusView" class="view">
       <div class="lens-bar" id="focusLensBar"></div>
       <div class="focus-grid">
         <!-- Timer Card -->
@@ -2369,6 +2516,51 @@
     </div>
   </div>
 
+  <div class="modal-overlay" id="habitModal">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title" id="habitModalTitle">New Habit</div>
+        <button class="modal-close-btn" id="habitModalCloseBtn">×</button>
+      </div>
+      <div class="modal-content">
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="color" class="cat-color" id="habitColor" title="Pick a color">
+            <input type="text" class="form-input" id="habitName" placeholder="e.g. Read" autocomplete="off" style="flex: 1;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Track</label>
+          <select class="form-select" id="habitKind">
+            <option value="check">Just did it — yes / no</option>
+            <option value="count">A count (pages, reps, glasses…)</option>
+            <option value="duration">Minutes</option>
+          </select>
+        </div>
+        <div class="form-group" id="habitTargetGroup">
+          <label class="form-label">Target</label>
+          <div style="display: flex; gap: 8px;">
+            <input type="number" class="form-input" id="habitTarget" min="1" value="1" style="flex: 0 0 90px;">
+            <input type="text" class="form-input" id="habitUnit" placeholder="unit (e.g. pages)" autocomplete="off" style="flex: 1;">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Per</label>
+          <select class="form-select" id="habitPeriod">
+            <option value="day">Day</option>
+            <option value="week">Week</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button class="btn-ghost" id="habitModalCancelBtn">Cancel</button>
+          <button class="btn-primary" id="habitModalSaveBtn">Save</button>
+          <button class="btn-danger" id="habitModalDeleteBtn" style="display: none;">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal-overlay" id="categoryModal">
     <div class="modal">
       <div class="modal-header">
@@ -2444,10 +2636,12 @@
           <div style="font-weight: 600; color: var(--accent);">S</div>
           <div>Skip to next timer</div>
           <div style="font-weight: 600; color: var(--accent);">1</div>
-          <div>Switch to Focus view</div>
+          <div>Switch to Habits view</div>
           <div style="font-weight: 600; color: var(--accent);">2</div>
-          <div>Switch to Calendar view</div>
+          <div>Switch to Focus view</div>
           <div style="font-weight: 600; color: var(--accent);">3</div>
+          <div>Switch to Calendar view</div>
+          <div style="font-weight: 600; color: var(--accent);">4</div>
           <div>Switch to Insights view</div>
           <div style="font-weight: 600; color: var(--accent);">Z</div>
           <div>Enter zen mode</div>
@@ -2567,6 +2761,11 @@
       { id: 'creative', name: 'Creative', color: '#F472B6' },
     ];
 
+    const DEFAULT_HABITS = [
+      { id: 'habit-exercise', name: 'Exercise', color: '#4ADE80', kind: 'duration', target: 30, unit: 'min', period: 'day' },
+      { id: 'habit-read', name: 'Read', color: '#FFB86B', kind: 'count', target: 10, unit: 'pages', period: 'day' },
+    ];
+
     let store = {
       categories: DEFAULT_CATEGORIES,
       // Grouping axes: independent ways to slice the same categories. A category holds one
@@ -2576,6 +2775,11 @@
       // are hidden (per axis, so switching back restores what you'd hidden there).
       lens: { axis: 'group', hidden: {} },
       sessions: [],
+      // Habits are logged by hand, one number per day: 1/0 for a check, a count, or minutes.
+      // They deliberately don't read from sessions — a habit you did away from the timer
+      // still counts, and pretending otherwise would make the streak lie.
+      habits: DEFAULT_HABITS,
+      habitLog: {},            // { [habitId]: { 'YYYY-MM-DD': number } }
       tasks: [],
       settings: {
         work: 25,
@@ -2702,6 +2906,51 @@
       return out;
     }
     // END bucketByHour
+
+    // BEGIN habitMath (test.mjs extracts these by these markers)
+    // Local YYYY-MM-DD. toISOString() would shift the key by a day for anyone not on UTC
+    // whenever they log near midnight, quietly crediting the habit to the wrong date.
+    function habitDayKey(d) {
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    // The day keys the habit's current period covers. Weeks run Monday–Sunday, matching
+    // bucketByHour's Monday-as-1 convention.
+    function habitPeriodDays(habit, date) {
+      if (habit.period !== 'week') return [habitDayKey(date)];
+      const monday = new Date(date);
+      monday.setHours(0, 0, 0, 0);
+      monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+      return Array.from({ length: 7 }, (_, i) => {
+        const d = new Date(monday);
+        d.setDate(monday.getDate() + i);
+        return habitDayKey(d);
+      });
+    }
+
+    function habitProgress(habit, entries, date) {
+      const target = Math.max(1, habit.target || 1);
+      const done = habitPeriodDays(habit, date).reduce((sum, k) => sum + (entries?.[k] || 0), 0);
+      return { done, target, complete: done >= target };
+    }
+
+    // Consecutive completed periods, counting back from now. An unfinished current period
+    // doesn't break the streak — a daily habit shouldn't read as "streak: 0" at 9am just
+    // because the day isn't over yet.
+    function habitStreak(habit, entries, today) {
+      const step = habit.period === 'week' ? 7 : 1;
+      const cursor = new Date(today);
+      cursor.setHours(0, 0, 0, 0);
+      let streak = 0;
+      if (!habitProgress(habit, entries, cursor).complete) cursor.setDate(cursor.getDate() - step);
+      while (habitProgress(habit, entries, cursor).complete && streak < 3650) {
+        streak++;
+        cursor.setDate(cursor.getDate() - step);
+      }
+      return streak;
+    }
+    // END habitMath
 
     // Re-render everything that shows sessions (cheap enough to just do all of it)
     function refreshAll() {
@@ -2904,9 +3153,11 @@
       });
     }
 
-    // Bring any store — from localStorage or from a device still on the old single-group
-    // build via cloud sync — up to the axes model. Idempotent, so it's safe to re-run.
-    function normalizeGrouping() {
+    // Bring any store — from localStorage or from a device still on an older build via
+    // cloud sync — up to the current model. Idempotent, so it's safe to re-run.
+    function normalizeStore() {
+      if (!Array.isArray(store.habits)) store.habits = [];
+      if (!store.habitLog || typeof store.habitLog !== 'object') store.habitLog = {};
       if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Group' }];
       store.categories.forEach(c => {
         if (!c.groups) c.groups = {};
@@ -2940,7 +3191,7 @@
           // Ensure tasks array exists
           if (!store.tasks) store.tasks = [];
 
-          normalizeGrouping();
+          normalizeStore();
 
           // NOTE: don't clear `running` here — init's restore path needs it to resume a
           // timer that was mid-session when the page was closed.
@@ -3055,12 +3306,13 @@
         const localTimer = store.timer; // don't let a remote device clobber a running timer
         store = { ...store, ...remote };
         if (localTimer.running) store.timer = localTimer;
-        normalizeGrouping();   // the other device may still be on the single-group build
+        normalizeStore();   // the other device may still be on an older build
         localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
         this._applying = false;
         applyTheme(store.settings.theme);
         ui.renderLensBars();
         ui.focus.render();
+        ui.habits.render();
         if (document.getElementById('calendarView')?.classList.contains('active')) ui.calendar.render();
         if (document.getElementById('insightsView')?.classList.contains('active')) ui.insights.render();
         this.setStatus('Synced (updated from another device)');
@@ -3549,6 +3801,259 @@
             bar.appendChild(reset);
           }
         });
+      },
+
+      // ===== HABITS VIEW =====
+      habits: {
+        // Which day each row's stepper is currently editing. Deliberately not persisted:
+        // opening the app should always land you on today, not on some past day you were
+        // patching up last night.
+        editingDay: {},
+
+        entriesFor(habitId) {
+          if (!store.habitLog[habitId]) store.habitLog[habitId] = {};
+          return store.habitLog[habitId];
+        },
+
+        // A habit's own idea of "one tap" — minutes move in fives, counts in ones
+        step(habit) {
+          return habit.kind === 'duration' ? 5 : 1;
+        },
+
+        setValue(habit, dayKey, value) {
+          const v = Math.max(0, Math.round(Number(value) || 0));
+          const entries = this.entriesFor(habit.id);
+          if (v) entries[dayKey] = v; else delete entries[dayKey];   // 0 isn't data, it's absence
+          saveStore();
+          this.render();
+        },
+
+        openEditor(habit) {
+          const modal = document.getElementById('habitModal');
+          const isNew = !habit;
+          this.editingHabit = habit || null;
+          document.getElementById('habitModalTitle').textContent = isNew ? 'New Habit' : 'Edit Habit';
+          document.getElementById('habitName').value = habit?.name || '';
+          document.getElementById('habitColor').value = habit?.color || '#7C6FF7';
+          document.getElementById('habitKind').value = habit?.kind || 'check';
+          document.getElementById('habitTarget').value = habit?.target ?? 1;
+          document.getElementById('habitUnit').value = habit?.unit || '';
+          document.getElementById('habitPeriod').value = habit?.period || 'day';
+          document.getElementById('habitModalDeleteBtn').style.display = isNew ? 'none' : '';
+          this.syncEditorFields();
+          modal.classList.add('open');
+          document.getElementById('habitName').focus();
+        },
+
+        // A yes/no habit has no unit and a target of 1 per day — hide what can't apply.
+        // Weekly checks keep the target ("gym 3x/week"), so only the daily case collapses.
+        syncEditorFields() {
+          const kind = document.getElementById('habitKind').value;
+          const period = document.getElementById('habitPeriod').value;
+          const group = document.getElementById('habitTargetGroup');
+          group.style.display = (kind === 'check' && period === 'day') ? 'none' : '';
+          document.getElementById('habitUnit').style.display = kind === 'count' ? '' : 'none';
+        },
+
+        saveEditor() {
+          const name = document.getElementById('habitName').value.trim();
+          if (!name) return;
+          const kind = document.getElementById('habitKind').value;
+          const period = document.getElementById('habitPeriod').value;
+          const hideTarget = kind === 'check' && period === 'day';
+          const fields = {
+            name,
+            color: document.getElementById('habitColor').value,
+            kind,
+            period,
+            target: hideTarget ? 1 : Math.max(1, parseInt(document.getElementById('habitTarget').value, 10) || 1),
+            unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
+          };
+          if (this.editingHabit) {
+            Object.assign(this.editingHabit, fields);
+          } else {
+            store.habits.push({ id: 'habit-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7), ...fields });
+          }
+          saveStore();
+          document.getElementById('habitModal').classList.remove('open');
+          this.render();
+        },
+
+        deleteHabit(habit) {
+          const index = store.habits.indexOf(habit);
+          const log = store.habitLog[habit.id];
+          store.habits.splice(index, 1);
+          delete store.habitLog[habit.id];
+          saveStore();
+          document.getElementById('habitModal').classList.remove('open');
+          this.render();
+          showToast(`Deleted "${habit.name}"`, () => {
+            store.habits.splice(index, 0, habit);
+            if (log) store.habitLog[habit.id] = log;   // the history is the expensive part to lose
+            saveStore();
+            this.render();
+          });
+        },
+
+        render() {
+          const list = document.getElementById('habitsList');
+          if (!list) return;
+          list.innerHTML = '';
+          const today = new Date();
+
+          if (!store.habits.length) {
+            list.appendChild(Object.assign(document.createElement('div'), {
+              className: 'empty-state',
+              textContent: 'No habits yet. Add one to start tracking.',
+            }));
+          }
+
+          let complete = 0;
+          store.habits.forEach(habit => {
+            const entries = this.entriesFor(habit.id);
+            const progress = habitProgress(habit, entries, today);
+            if (progress.complete) complete++;
+            list.appendChild(this.renderRow(habit, entries, progress, today));
+          });
+
+          document.getElementById('habitsDoneCount').textContent = `${complete} / ${store.habits.length}`;
+          const bar = document.getElementById('habitsDoneBar');
+          bar.innerHTML = '';
+          const fill = document.createElement('div');
+          fill.style.cssText = `width: ${store.habits.length ? (complete / store.habits.length) * 100 : 0}%; background: var(--accent); border-radius: 4px;`;
+          bar.appendChild(fill);
+        },
+
+        renderRow(habit, entries, progress, today) {
+          const row = document.createElement('div');
+          row.className = 'habit-row' + (progress.complete ? ' done' : '');
+
+          const main = document.createElement('div');
+          main.className = 'habit-main';
+
+          const head = document.createElement('div');
+          head.className = 'habit-head';
+          const dot = document.createElement('div');
+          dot.className = 'habit-dot';
+          dot.style.background = habit.color;
+          head.appendChild(dot);
+
+          const nameBtn = Object.assign(document.createElement('button'), {
+            className: 'habit-name', textContent: habit.name, title: 'Edit habit',
+          });
+          nameBtn.addEventListener('click', () => this.openEditor(habit));
+          head.appendChild(nameBtn);
+
+          const when = habit.period === 'week' ? 'this week' : 'today';
+          const unit = habit.unit ? ' ' + habit.unit : '';
+          const meta = Object.assign(document.createElement('span'), {
+            className: 'habit-meta' + (progress.complete ? ' complete' : ''),
+            textContent: (habit.kind === 'check' && progress.target === 1)
+              ? (progress.complete ? `Done ${when}` : `Not yet ${when}`)
+              : `${progress.done} / ${progress.target}${unit} ${when}`,
+          });
+          head.appendChild(meta);
+
+          const streak = habitStreak(habit, entries, today);
+          if (streak > 0) {
+            head.appendChild(Object.assign(document.createElement('span'), {
+              className: 'habit-meta',
+              textContent: `🔥 ${streak}`,
+              title: `${streak} ${habit.period === 'week' ? 'week' : 'day'} streak`,
+            }));
+          }
+          main.appendChild(head);
+
+          const barEl = document.createElement('div');
+          barEl.className = 'habit-bar';
+          const fill = document.createElement('div');
+          fill.className = 'habit-bar-fill';
+          fill.style.width = Math.min(100, (progress.done / progress.target) * 100) + '%';
+          fill.style.background = habit.color;
+          barEl.appendChild(fill);
+          main.appendChild(barEl);
+
+          main.appendChild(this.renderDays(habit, entries, today));
+          row.appendChild(main);
+          row.appendChild(this.renderControls(habit, entries, today));
+          return row;
+        },
+
+        // The last 14 days, oldest first. Each square is also the day picker for the row.
+        renderDays(habit, entries, today) {
+          const strip = document.createElement('div');
+          strip.className = 'habit-days';
+          const perDay = habit.period === 'week' ? habit.target / 7 : habit.target;
+          const editing = this.editingDay[habit.id] || habitDayKey(today);
+
+          for (let i = 13; i >= 0; i--) {
+            const d = new Date(today);
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - i);
+            const key = habitDayKey(d);
+            const value = entries[key] || 0;
+            const cell = document.createElement('button');
+            cell.className = 'habit-day' + (key === editing ? ' editing' : '');
+            cell.title = `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ''}`;
+            if (value) {
+              cell.style.background = habit.color;
+              cell.style.opacity = (0.35 + 0.65 * Math.min(1, value / Math.max(1, perDay))).toFixed(2);
+            }
+            cell.addEventListener('click', () => {
+              this.editingDay[habit.id] = key;
+              this.render();
+            });
+            strip.appendChild(cell);
+          }
+          return strip;
+        },
+
+        renderControls(habit, entries, today) {
+          const wrap = document.createElement('div');
+          wrap.className = 'habit-controls';
+          const dayKey = this.editingDay[habit.id] || habitDayKey(today);
+          const value = entries[dayKey] || 0;
+
+          if (habit.kind === 'check') {
+            const btn = Object.assign(document.createElement('button'), {
+              className: 'habit-check' + (value ? ' on' : ''), textContent: '✓',
+              title: dayKey === habitDayKey(today) ? 'Mark done today' : `Mark done on ${dayKey}`,
+            });
+            if (value) btn.style.background = habit.color;
+            btn.addEventListener('click', () => this.setValue(habit, dayKey, value ? 0 : 1));
+            wrap.appendChild(btn);
+          } else {
+            const step = this.step(habit);
+            const minus = Object.assign(document.createElement('button'), { className: 'habit-step-btn', textContent: '−' });
+            minus.addEventListener('click', () => this.setValue(habit, dayKey, value - step));
+
+            const input = Object.assign(document.createElement('input'), {
+              type: 'number', className: 'habit-value', min: '0', value: String(value),
+            });
+            input.addEventListener('change', () => this.setValue(habit, dayKey, input.value));
+
+            const plus = Object.assign(document.createElement('button'), { className: 'habit-step-btn', textContent: '+' });
+            plus.addEventListener('click', () => this.setValue(habit, dayKey, value + step));
+
+            wrap.append(minus, input, plus);
+          }
+
+          // Only say which day you're editing when it isn't today — the common case needs no label
+          if (dayKey !== habitDayKey(today)) {
+            const back = Object.assign(document.createElement('button'), {
+              className: 'btn-small',
+              // 'T00:00' keeps this local; a bare date string is parsed as UTC and can render as the day before
+              textContent: new Date(dayKey + 'T00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+              title: 'Back to today',
+            });
+            back.addEventListener('click', () => {
+              delete this.editingDay[habit.id];
+              this.render();
+            });
+            wrap.appendChild(back);
+          }
+          return wrap;
+        },
       },
 
       focus: {
@@ -5611,7 +6116,10 @@
           document.querySelectorAll('[data-view]').forEach(b => b.classList.remove('active'));
           btn.classList.add('active');
           document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-          if (view === 'focus') {
+          if (view === 'habits') {
+            document.getElementById('habitsView')?.classList.add('active');
+            ui.habits.render();
+          } else if (view === 'focus') {
             document.getElementById('focusView')?.classList.add('active');
             ui.focus.render();
           } else if (view === 'calendar') {
@@ -5621,6 +6129,23 @@
             document.getElementById('insightsView')?.classList.add('active');
             ui.insights.render();
           }
+        });
+      });
+
+      // Habits
+      document.getElementById('addHabitBtn')?.addEventListener('click', () => ui.habits.openEditor(null));
+      document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
+      document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());
+      document.getElementById('habitModalSaveBtn')?.addEventListener('click', () => ui.habits.saveEditor());
+      document.getElementById('habitModalDeleteBtn')?.addEventListener('click', () => {
+        if (ui.habits.editingHabit) ui.habits.deleteHabit(ui.habits.editingHabit);
+      });
+      document.getElementById('habitName')?.addEventListener('keydown', e => {
+        if (e.key === 'Enter') ui.habits.saveEditor();
+      });
+      ['habitModalCloseBtn', 'habitModalCancelBtn'].forEach(id => {
+        document.getElementById(id)?.addEventListener('click', () => {
+          document.getElementById('habitModal')?.classList.remove('open');
         });
       });
 
@@ -5869,13 +6394,17 @@
             break;
           case 'Digit1':
             e.preventDefault();
-            document.querySelector('[data-view="focus"]')?.click();
+            document.querySelector('[data-view="habits"]')?.click();
             break;
           case 'Digit2':
             e.preventDefault();
-            document.querySelector('[data-view="calendar"]')?.click();
+            document.querySelector('[data-view="focus"]')?.click();
             break;
           case 'Digit3':
+            e.preventDefault();
+            document.querySelector('[data-view="calendar"]')?.click();
+            break;
+          case 'Digit4':
             e.preventDefault();
             document.querySelector('[data-view="insights"]')?.click();
             break;
@@ -5900,7 +6429,8 @@
       loadStore();
       setupEventListeners();
       ui.renderLensBars();
-      ui.focus.render();
+      ui.focus.render();       // primes the timer card even though Habits is what's on screen
+      ui.habits.render();
       applyReminder(false);   // reload resumes the countdown instead of restarting it
       setInterval(() => ui.focus.renderQuickLog(), 60000);   // keeps the "since …" chip honest
       cloudSync.init();
