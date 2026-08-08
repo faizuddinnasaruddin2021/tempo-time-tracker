@@ -2037,6 +2037,96 @@
       .habit-controls { justify-content: flex-end; }
     }
 
+    /* ===== HABIT INSIGHTS ===== */
+    .insights-note {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin: -10px 0 18px;
+    }
+
+    /* Name | 30-day bar | streak | total | trend — collapses to two columns on narrow screens */
+    .habit-stat-row {
+      display: grid;
+      grid-template-columns: minmax(90px, 1.4fr) 2fr repeat(3, minmax(64px, 0.8fr));
+      align-items: center;
+      gap: 12px;
+      padding: 12px 0;
+      border-bottom: 1px solid var(--hairline);
+      font-size: 13px;
+    }
+    .habit-stat-row:last-child { border-bottom: none; }
+    .habit-stat-row .habit-name { font-size: 13px; }
+
+    .habit-stat-label {
+      font-size: 11px;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+    }
+    .habit-stat-value { font-variant-numeric: tabular-nums; }
+    .habit-stat-up { color: var(--cat-exercise); }
+    .habit-stat-down { color: #F87171; }
+
+    /* Rows of days, one row per habit — same square vocabulary as the day strip */
+    .habit-grid-row {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      margin-bottom: 6px;
+    }
+    .habit-grid-label {
+      flex: 0 0 110px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .habit-grid-cell {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      border-radius: 3px;
+      background: var(--surface-1);
+    }
+
+    .habit-weekday-head {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .habit-weekday-head span {
+      flex: 1 1 0;
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-secondary);
+    }
+    .habit-weekday-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .habit-weekday-cell {
+      flex: 1 1 0;
+      min-width: 34px;
+      height: 30px;
+      border-radius: 6px;
+      background: var(--surface-1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: var(--text-primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 620px) {
+      .habit-stat-row { grid-template-columns: 1fr 1fr; }
+      .habit-grid-label { flex-basis: 80px; }
+    }
+
     /* --- Categories modal --- */
     .cat-add {
       display: flex;
@@ -2257,6 +2347,12 @@
           <div class="card-title">Habits</div>
           <div id="habitsList"></div>
         </div>
+
+        <!-- Quick read on how it's going; the full breakdown lives in Insights -->
+        <div class="insights-row" id="habitsOverview" style="grid-template-columns: repeat(3, 1fr);"></div>
+        <div style="text-align: center;">
+          <button class="btn-small" id="habitsSeeInsightsBtn">See full habit insights →</button>
+        </div>
       </div>
     </div>
 
@@ -2389,6 +2485,25 @@
     <div id="insightsView" class="view">
       <div class="lens-bar" id="insightsLensBar"></div>
       <div class="insights-grid">
+        <!-- Habits: a separate track from sessions, so the lens above doesn't touch these -->
+        <div class="card">
+          <div class="card-title">Habits — Last 30 Days</div>
+          <div class="insights-note">The group filter above applies to sessions, not habits.</div>
+          <div id="insightsHabits"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Habit Consistency</div>
+          <div class="insights-note">Every day of the last 30, per habit. Faint means logged but short of target.</div>
+          <div id="insightsHabitGrid" style="overflow-x: auto;"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Habits by Weekday</div>
+          <div class="insights-note">How often each habit gets logged on each day of the week, over 90 days.</div>
+          <div id="insightsHabitWeekdays" style="overflow-x: auto;"></div>
+        </div>
+
         <!-- Lifetime Stats -->
         <div class="insights-row">
           <div class="card insights-stat-tile">
@@ -2949,6 +3064,51 @@
         cursor.setDate(cursor.getDate() - step);
       }
       return streak;
+    }
+
+    // The periods a habit had inside the trailing `days`-day window, one representative
+    // date each, oldest first. A weekly habit gets one entry per week rather than seven —
+    // counting it per day would peg a perfect 1-of-1 week at 14%.
+    function habitPeriodsIn(habit, endDate, days) {
+      const seen = new Set();
+      const out = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(endDate);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - i);
+        const id = habitPeriodDays(habit, d)[0];   // a period's first day identifies it
+        if (seen.has(id)) continue;
+        seen.add(id);
+        out.push(d);
+      }
+      return out;
+    }
+
+    function habitCompletionRate(habit, entries, endDate, days) {
+      const periods = habitPeriodsIn(habit, endDate, days);
+      const done = periods.filter(d => habitProgress(habit, entries, d).complete).length;
+      return { done, total: periods.length, rate: periods.length ? done / periods.length : 0 };
+    }
+
+    // How often a habit gets logged on each weekday, Monday first. Counts any logged value
+    // rather than target-met: for a weekly habit no single day can meet the target, and
+    // "which days do I actually show up" is the question this answers.
+    function habitWeekdayRate(entries, endDate, days) {
+      const out = Array.from({ length: 7 }, () => ({ hit: 0, total: 0 }));
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(endDate);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - i);
+        const slot = out[(d.getDay() + 6) % 7];
+        slot.total++;
+        if (entries?.[habitDayKey(d)]) slot.hit++;
+      }
+      return out;
+    }
+
+    // Lifetime units logged. A yes/no habit stores 1 per day, so this is its days-done count.
+    function habitTotal(entries) {
+      return Object.values(entries || {}).reduce((a, v) => a + v, 0);
     }
     // END habitMath
 
@@ -3820,6 +3980,14 @@
           return habit.kind === 'duration' ? 5 : 1;
         },
 
+        // How strongly to tint one day's square. A weekly target spreads over seven days,
+        // so a weekly habit's day isn't judged against the whole week's number.
+        dayAlpha(habit, value) {
+          if (!value) return 0;
+          const perDay = habit.period === 'week' ? habit.target / 7 : habit.target;
+          return 0.35 + 0.65 * Math.min(1, value / Math.max(1, perDay));
+        },
+
         setValue(habit, dayKey, value) {
           const v = Math.max(0, Math.round(Number(value) || 0));
           const entries = this.entriesFor(habit.id);
@@ -3922,6 +4090,8 @@
           const fill = document.createElement('div');
           fill.style.cssText = `width: ${store.habits.length ? (complete / store.habits.length) * 100 : 0}%; background: var(--accent); border-radius: 4px;`;
           bar.appendChild(fill);
+
+          this.renderOverview();
         },
 
         renderRow(habit, entries, progress, today) {
@@ -3979,11 +4149,211 @@
           return row;
         },
 
+        // ---- Analysis -------------------------------------------------------------------
+        // Both surfaces read these: a three-tile summary under the habit list, and the full
+        // breakdown in Insights. Habit analysis never touches visibleSessions() — the lens
+        // filters categories, and habits don't have any.
+        WEEKDAYS: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+        WINDOW: 30,          // days behind every "last 30 days" number
+        WEEKDAY_WINDOW: 90,  // a weekday pattern needs ~13 samples per day to mean anything
+
+        renderOverview() {
+          const row = document.getElementById('habitsOverview');
+          if (!row) return;
+          row.innerHTML = '';
+          if (!store.habits.length) return;
+          const today = new Date();
+
+          const tile = (title, value, sub) => {
+            const card = document.createElement('div');
+            card.className = 'card insights-stat-tile';
+            card.append(
+              Object.assign(document.createElement('div'), { className: 'card-title', textContent: title }),
+              Object.assign(document.createElement('div'), { className: 'stat-number', textContent: value }),
+              Object.assign(document.createElement('div'), { className: 'stat-label', textContent: sub }),
+            );
+            return card;
+          };
+
+          // Consistency pools every habit's periods, so a weekly habit counts once a week
+          // rather than swamping the average with seven days of "incomplete".
+          let done = 0, total = 0;
+          let best = { streak: 0, name: '—' };
+          const weekdays = Array.from({ length: 7 }, () => ({ hit: 0, total: 0 }));
+
+          store.habits.forEach(habit => {
+            const entries = this.entriesFor(habit.id);
+            const rate = habitCompletionRate(habit, entries, today, this.WINDOW);
+            done += rate.done;
+            total += rate.total;
+            const streak = habitStreak(habit, entries, today);
+            if (streak > best.streak) best = { streak, name: habit.name };
+            habitWeekdayRate(entries, today, this.WEEKDAY_WINDOW).forEach((slot, i) => {
+              weekdays[i].hit += slot.hit;
+              weekdays[i].total += slot.total;
+            });
+          });
+
+          const topDay = weekdays.reduce((a, b, i) =>
+            (b.total && b.hit / b.total > (a.slot.total ? a.slot.hit / a.slot.total : -1)) ? { slot: b, i } : a,
+            { slot: weekdays[0], i: 0 });
+          const anyLogged = weekdays.some(s => s.hit);
+
+          row.append(
+            tile('30-Day Consistency', total ? Math.round((done / total) * 100) + '%' : '—', `${done} of ${total} completed`),
+            tile('Longest Streak', best.streak ? String(best.streak) : '—', best.streak ? best.name : 'no active streak'),
+            tile('Best Day', anyLogged ? this.WEEKDAYS[topDay.i] : '—',
+              anyLogged ? Math.round((topDay.slot.hit / topDay.slot.total) * 100) + '% of the time' : 'nothing logged yet'),
+          );
+        },
+
+        renderInsights() {
+          const table = document.getElementById('insightsHabits');
+          const grid = document.getElementById('insightsHabitGrid');
+          const weekdayBox = document.getElementById('insightsHabitWeekdays');
+          if (!table || !grid || !weekdayBox) return;
+          [table, grid, weekdayBox].forEach(el => { el.innerHTML = ''; });
+
+          if (!store.habits.length) {
+            table.appendChild(Object.assign(document.createElement('div'), {
+              className: 'empty-state', textContent: 'No habits yet. Add one on the Habits page.',
+            }));
+            return;
+          }
+
+          const today = new Date();
+          const previousEnd = new Date(today);
+          previousEnd.setDate(previousEnd.getDate() - this.WINDOW);   // the window before this one
+
+          store.habits.forEach(habit => {
+            const entries = this.entriesFor(habit.id);
+            table.appendChild(this.renderStatRow(habit, entries, today, previousEnd));
+            grid.appendChild(this.renderGridRow(habit, entries, today));
+          });
+
+          const head = document.createElement('div');
+          head.className = 'habit-weekday-head';
+          head.appendChild(Object.assign(document.createElement('span'), {
+            style: 'flex: 0 0 110px; text-align: left;',
+          }));
+          this.WEEKDAYS.forEach(d => head.appendChild(Object.assign(document.createElement('span'), { textContent: d })));
+          weekdayBox.appendChild(head);
+          store.habits.forEach(habit => {
+            weekdayBox.appendChild(this.renderWeekdayRow(habit, this.entriesFor(habit.id), today));
+          });
+        },
+
+        renderStatRow(habit, entries, today, previousEnd) {
+          const row = document.createElement('div');
+          row.className = 'habit-stat-row';
+
+          const nameCell = document.createElement('div');
+          nameCell.style.cssText = 'display: flex; align-items: center; gap: 8px; min-width: 0;';
+          const dot = document.createElement('div');
+          dot.className = 'habit-dot';
+          dot.style.background = habit.color;
+          const name = Object.assign(document.createElement('button'), {
+            className: 'habit-name', textContent: habit.name, title: 'Edit habit',
+          });
+          name.addEventListener('click', () => this.openEditor(habit));
+          nameCell.append(dot, name);
+          row.appendChild(nameCell);
+
+          const current = habitCompletionRate(habit, entries, today, this.WINDOW);
+          const bar = document.createElement('div');
+          const barTrack = document.createElement('div');
+          barTrack.className = 'habit-bar';
+          const fill = document.createElement('div');
+          fill.className = 'habit-bar-fill';
+          fill.style.width = (current.rate * 100) + '%';
+          fill.style.background = habit.color;
+          barTrack.appendChild(fill);
+          bar.append(barTrack, Object.assign(document.createElement('div'), {
+            className: 'insights-note',
+            style: 'margin: 6px 0 0;',
+            textContent: `${Math.round(current.rate * 100)}% — ${current.done} of ${current.total} ${habit.period === 'week' ? 'weeks' : 'days'}`,
+          }));
+          row.appendChild(bar);
+
+          const cell = (label, value, className = '') => {
+            const box = document.createElement('div');
+            box.append(
+              Object.assign(document.createElement('span'), { className: 'habit-stat-label', textContent: label }),
+              Object.assign(document.createElement('span'), { className: 'habit-stat-value ' + className, textContent: value }),
+            );
+            return box;
+          };
+
+          row.appendChild(cell('Streak', `${habitStreak(habit, entries, today)} 🔥`));
+
+          const total = habitTotal(entries);
+          const unit = habit.kind === 'check' ? (habit.period === 'week' ? 'days' : 'days') : (habit.unit || '');
+          row.appendChild(cell('Total', `${total}${unit ? ' ' + unit : ''}`));
+
+          // Trend is percentage *points* against the previous 30 days — a rate compared to
+          // a rate, so a habit with few periods can't look like a huge swing in raw counts.
+          const previous = habitCompletionRate(habit, entries, previousEnd, this.WINDOW);
+          const hasHistory = previous.done > 0 || current.done > 0;
+          const delta = Math.round((current.rate - previous.rate) * 100);
+          row.appendChild(cell('vs Prev 30',
+            !hasHistory ? '—' : (delta > 0 ? `+${delta} pts` : delta < 0 ? `${delta} pts` : 'flat'),
+            delta > 0 ? 'habit-stat-up' : delta < 0 ? 'habit-stat-down' : ''));
+
+          return row;
+        },
+
+        renderGridRow(habit, entries, today) {
+          const row = document.createElement('div');
+          row.className = 'habit-grid-row';
+          row.appendChild(Object.assign(document.createElement('div'), {
+            className: 'habit-grid-label', textContent: habit.name, title: habit.name,
+          }));
+
+          for (let i = this.WINDOW - 1; i >= 0; i--) {
+            const d = new Date(today);
+            d.setHours(0, 0, 0, 0);
+            d.setDate(d.getDate() - i);
+            const value = entries[habitDayKey(d)] || 0;
+            const cell = document.createElement('div');
+            cell.className = 'habit-grid-cell';
+            cell.title = `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ' — nothing logged'}`;
+            if (value) {
+              cell.style.background = habit.color;
+              cell.style.opacity = this.dayAlpha(habit, value).toFixed(2);
+            }
+            row.appendChild(cell);
+          }
+          return row;
+        },
+
+        renderWeekdayRow(habit, entries, today) {
+          const row = document.createElement('div');
+          row.className = 'habit-weekday-row';
+          row.appendChild(Object.assign(document.createElement('div'), {
+            className: 'habit-grid-label', textContent: habit.name, title: habit.name,
+          }));
+
+          habitWeekdayRate(entries, today, this.WEEKDAY_WINDOW).forEach((slot, i) => {
+            const rate = slot.total ? slot.hit / slot.total : 0;
+            const cell = document.createElement('div');
+            cell.className = 'habit-weekday-cell';
+            cell.textContent = slot.total ? Math.round(rate * 100) + '%' : '—';
+            cell.title = `${this.WEEKDAYS[i]}: ${slot.hit} of ${slot.total}`;
+            if (rate) {
+              // Tint via an 8-digit hex rather than `opacity`, which would fade the
+              // percentage text along with the background and make strong days unreadable.
+              const alpha = Math.round((0.18 + 0.55 * rate) * 255).toString(16).padStart(2, '0');
+              cell.style.background = habit.color + alpha;
+            }
+            row.appendChild(cell);
+          });
+          return row;
+        },
+
         // The last 14 days, oldest first. Each square is also the day picker for the row.
         renderDays(habit, entries, today) {
           const strip = document.createElement('div');
           strip.className = 'habit-days';
-          const perDay = habit.period === 'week' ? habit.target / 7 : habit.target;
           const editing = this.editingDay[habit.id] || habitDayKey(today);
 
           for (let i = 13; i >= 0; i--) {
@@ -3997,7 +4367,7 @@
             cell.title = `${d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ''}`;
             if (value) {
               cell.style.background = habit.color;
-              cell.style.opacity = (0.35 + 0.65 * Math.min(1, value / Math.max(1, perDay))).toFixed(2);
+              cell.style.opacity = this.dayAlpha(habit, value).toFixed(2);
             }
             cell.addEventListener('click', () => {
               this.editingDay[habit.id] = key;
@@ -5103,6 +5473,7 @@
       // ===== UI MODULE: INSIGHTS VIEW =====
       insights: {
         render() {
+          ui.habits.renderInsights();
           this.renderStats();
           this.renderHeatmap();
           this.renderChart();
@@ -6134,6 +6505,9 @@
 
       // Habits
       document.getElementById('addHabitBtn')?.addEventListener('click', () => ui.habits.openEditor(null));
+      document.getElementById('habitsSeeInsightsBtn')?.addEventListener('click', () => {
+        document.querySelector('[data-view="insights"]')?.click();
+      });
       document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitModalSaveBtn')?.addEventListener('click', () => ui.habits.saveEditor());

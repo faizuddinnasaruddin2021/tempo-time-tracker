@@ -146,10 +146,36 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitPeriodDays(habit, date)` | The day keys the habit's period covers (Mon–Sun for weekly) |
 | `habitProgress(habit, entries, date)` | `{ done, target, complete }` for the period containing `date` |
 | `habitStreak(habit, entries, today)` | Consecutive completed periods; an unfinished *current* period doesn't break it |
+| `habitPeriodsIn(habit, endDate, days)` | The periods inside a trailing window, one date each — a weekly habit gets one per week, not seven |
+| `habitCompletionRate(habit, entries, endDate, days)` | `{ done, total, rate }` over that window |
+| `habitWeekdayRate(entries, endDate, days)` | Mon-first `[{ hit, total }]` — counts *logged*, not target-met |
+| `habitTotal(entries)` | Lifetime units; for a yes/no habit that's its days-done count |
 
 The 14-day strip on each row is also the day picker: clicking a square points that row's
 stepper at that day (`ui.habits.editingDay`, deliberately not persisted). Backfilling is
 the common case for habits, so it shouldn't need a modal.
+
+### Habit analysis
+
+Two surfaces, one module. `ui.habits.renderOverview()` draws the three tiles under the
+habit list; `ui.habits.renderInsights()` draws the three cards at the top of Insights and
+is called from `ui.insights.render()`. Both live in `ui.habits` rather than `ui.insights`
+because they read `store.habitLog` and never touch sessions.
+
+Two things there are easy to get wrong:
+
+- **Rates pool *periods*, not days.** A weekly habit contributes ~4 periods to a 30-day
+  window, not 30. Counting per day would peg a perfect 1-of-1 week at 14% and drag the
+  overall consistency number down with it.
+- **The weekday grid counts days *logged*, not days *complete*.** No single day can satisfy
+  a weekly target, so target-met would render an all-zero row for every weekly habit.
+
+The trend column compares the current window's rate against the previous window's rate and
+reports the gap in percentage points — a rate against a rate, so a habit with few periods
+can't look like a large swing.
+
+The Insights view carries a note that the lens bar above it filters sessions only. Habits
+have no category, so the lens has nothing to filter them by.
 
 ## Code layout inside `index.html`
 

@@ -14,6 +14,14 @@ All notable changes to Tempo. Newest first.
 - Habits are created and edited from **+ New habit** or by clicking a habit's name;
   deleting one offers Undo and restores its full history.
 - View shortcuts shifted down one: **1** Habits, **2** Focus, **3** Calendar, **4** Insights.
+- **Habit analysis, in two places.** Under the habit list: 30-day consistency, your longest
+  running streak, and the weekday you're most reliable on. In Insights, above the session
+  cards: per-habit completion rate, streak, lifetime total and a trend against the previous
+  30 days; a 30-day consistency grid; and a weekday breakdown over 90 days — the
+  "weekends kill my streak" view.
+- Rates count *periods*, so a weekly habit that went 1-for-1 reads as 100%, not 14%.
+  The lens bar on Insights notes that it filters sessions only — habits have no category
+  for it to filter on.
 
 ## [Previously unreleased] — 2026-08-05
 

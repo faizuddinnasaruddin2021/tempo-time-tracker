@@ -58,8 +58,10 @@ console.log('bucketByHour: 7 checks passed');
 // ---- Habit periods, progress and streaks -------------------------------------------
 const hsrc = html.match(/\/\/ BEGIN habitMath.*\n([\s\S]*?)\/\/ END habitMath/);
 assert.ok(hsrc, 'habitMath markers not found in index.html');
-const { habitDayKey, habitPeriodDays, habitProgress, habitStreak } =
-  new Function(hsrc[1] + '; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak };')();
+const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
+        habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal } =
+  new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
+    habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -110,4 +112,30 @@ assert.equal(habitStreak(weekly, {
 assert.deepEqual(habitPeriodDays(weekly, day(2026, 3, 10)),
   ['2026-03-09', '2026-03-10', '2026-03-11', '2026-03-12', '2026-03-13', '2026-03-14', '2026-03-15']);
 
-console.log('habitMath: 7 checks passed');
+// 8. A window holds one period per day for a daily habit, but one per *week* for a weekly
+//    one — counting a weekly habit per day would peg a perfect 1-of-1 week at 14%
+assert.equal(habitPeriodsIn(daily, day(2026, 8, 8), 30).length, 30);
+assert.equal(habitPeriodsIn(weekly, day(2026, 8, 8), 30).length, 5, '30 days spans 5 Mon–Sun weeks here');
+assert.equal(habitDayKey(habitPeriodsIn(daily, day(2026, 8, 8), 3)[0]), '2026-08-06', 'oldest first, window includes today');
+
+// 9. Completion rate counts completed periods, not logged days
+const month = { '2026-08-08': 10, '2026-08-07': 10, '2026-08-06': 4 };
+assert.deepEqual(habitCompletionRate(daily, month, day(2026, 8, 8), 30), { done: 2, total: 30, rate: 2 / 30 });
+assert.deepEqual(habitCompletionRate(weekly, { '2026-08-03': 1, '2026-08-04': 1, '2026-08-05': 1 }, day(2026, 8, 8), 30),
+  { done: 1, total: 5, rate: 1 / 5 }, 'one complete week out of the five in the window');
+assert.equal(habitCompletionRate(daily, {}, day(2026, 8, 8), 30).rate, 0);
+
+// 10. Weekday buckets are Monday-first and count every occurrence of that weekday
+const wd = habitWeekdayRate({ '2026-08-03': 5, '2026-08-04': 5, '2026-08-10': 5 }, day(2026, 8, 15), 14);
+assert.equal(wd[0].total, 2, 'two Mondays in a fortnight');
+assert.equal(wd[0].hit, 2, 'Aug 3 and Aug 10 are both Mondays');
+assert.equal(wd[1].hit, 1);            // Tue: only Aug 4
+assert.equal(wd[5].hit + wd[6].hit, 0, 'nothing logged on a weekend');
+assert.equal(wd.reduce((a, s) => a + s.total, 0), 14, 'every day in the window lands in exactly one bucket');
+
+// 11. Lifetime total sums every entry, and is a days-done count for a yes/no habit
+assert.equal(habitTotal({ '2026-08-01': 30, '2026-08-02': 45 }), 75);
+assert.equal(habitTotal({ '2026-08-01': 1, '2026-08-02': 1, '2026-08-03': 1 }), 3);
+assert.equal(habitTotal(undefined), 0);
+
+console.log('habitMath: 11 checks passed');
