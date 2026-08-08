@@ -14,6 +14,12 @@ All notable changes to Habitus. Newest first.
   how much of each day was done. Picking a day moves **every** habit to it at once, and the
   card above retitles to that date — so fixing up Wednesday is one click, not one per habit.
   Arrows step week by week; "Today" jumps back.
+- **A habit's "Last 30 Days" is now a calendar** — weekday columns, date numbers, and the
+  month named where one starts — instead of thirty identical squares that told you nothing
+  about which day was which. Today is outlined; days outside the window are dimmed but
+  still drawn, so the weeks stay whole.
+- The consistency grid in Insights names its ends ("10 Jul on the left through 8 Aug on the
+  right"), since one row per habit can't carry date labels.
 - The squares on each row are now the seven days of that week, in the same columns as the
   header above them, so it's obvious which day each square is. Future days are greyed and
   can't be logged. (The 30-day strip is still in a habit's detail view.)

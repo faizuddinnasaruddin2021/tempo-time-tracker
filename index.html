@@ -2239,6 +2239,36 @@
       background: var(--surface-1);
     }
 
+    /* Calendar view of one habit's last 30 days */
+    .habit-cal {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 4px;
+      margin-bottom: 4px;
+    }
+    .habit-cal-head {
+      text-align: center;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+      color: var(--text-secondary);
+      padding-bottom: 2px;
+    }
+    .habit-cal-cell {
+      height: 34px;
+      border-radius: 8px;
+      background: var(--surface-1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-primary);
+    }
+    .habit-cal-cell.today { box-shadow: inset 0 0 0 1px var(--accent); }
+    /* Days the window doesn't cover still render, so the weeks stay whole */
+    .habit-cal-cell.outside { opacity: 0.3; }
+
     .habit-weekday-head {
       display: flex;
       gap: 6px;
@@ -2652,7 +2682,7 @@
 
         <div class="card">
           <div class="card-title">Habit Consistency</div>
-          <div class="insights-note">Every day of the last 30, per habit. Faint means logged but short of target.</div>
+          <div class="insights-note" id="insightsHabitGridNote">Every day of the last 30, per habit. Faint means logged but short of target.</div>
           <div id="insightsHabitGrid" style="overflow-x: auto;"></div>
         </div>
 
@@ -4526,7 +4556,7 @@
 
           body.append(
             Object.assign(document.createElement('div'), { className: 'card-title', textContent: 'Last 30 Days' }),
-            (() => { const box = document.createElement('div'); box.style.overflowX = 'auto'; box.appendChild(this.renderGridRow(habit, entries, today, '')); return box; })(),
+            this.renderMonthGrid(habit, entries, today),
             Object.assign(document.createElement('div'), { className: 'card-title', style: 'margin-top: 20px;', textContent: 'By Weekday' }),
           );
 
@@ -4982,6 +5012,14 @@
             grid.appendChild(this.renderGridRow(habit, entries, today));
           });
 
+          // Thirty identical squares say nothing about when they were; name the ends at least
+          const note = document.getElementById('insightsHabitGridNote');
+          if (note) {
+            const fmt = d => d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+            const oldest = new Date(today.getTime() - (this.WINDOW - 1) * 86400000);
+            note.textContent = `${fmt(oldest)} on the left through ${fmt(today)} on the right, per habit. Faint means logged but short of target.`;
+          }
+
           const head = document.createElement('div');
           head.className = 'habit-weekday-head';
           head.appendChild(Object.assign(document.createElement('span'), {
@@ -5084,6 +5122,53 @@
             row.appendChild(cell);
           }
           return row;
+        },
+
+        // The last 30 days as a real calendar — weekday columns, date numbers, month names
+        // where one starts. A bare row of 30 identical squares couldn't tell you which day
+        // any of them was.
+        renderMonthGrid(habit, entries, today) {
+          const wrap = document.createElement('div');
+          wrap.className = 'habit-cal';
+
+          HABIT_WEEKDAYS.forEach(d => wrap.appendChild(Object.assign(document.createElement('div'), {
+            className: 'habit-cal-head', textContent: d,
+          })));
+
+          // Start at the Monday on or before the oldest day in the window, so the columns
+          // are real weekdays rather than an arbitrary offset
+          const start = new Date(today);
+          start.setHours(0, 0, 0, 0);
+          start.setDate(start.getDate() - (this.WINDOW - 1));
+          start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+
+          const todayKey = habitDayKey(today);
+          const oldestKey = habitDayKey(new Date(today.getTime() - (this.WINDOW - 1) * 86400000));
+          const cursor = new Date(start);
+          while (cursor <= today || cursor.getDay() !== 1) {
+            const key = habitDayKey(cursor);
+            const value = entries[key] || 0;
+            const cell = document.createElement('div');
+            cell.className = 'habit-cal-cell'
+              + (key === todayKey ? ' today' : '')
+              + (key > todayKey || key < oldestKey ? ' outside' : '');
+            // The 1st carries its month, the way a wall calendar does
+            cell.textContent = cursor.getDate() === 1
+              ? cursor.toLocaleDateString(undefined, { month: 'short' }) + ' 1'
+              : String(cursor.getDate());
+            cell.title = `${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ''}`;
+            if (value) {
+              // 8-digit hex rather than opacity so the date isn't faded with the tint, and
+              // capped short of full strength so the number stays readable on a done day —
+              // these squares carry text, unlike the ones on the week strip.
+              const alpha = Math.round(Math.min(0.7, this.dayAlpha(habit, value)) * 255).toString(16).padStart(2, '0');
+              cell.style.background = habit.color + alpha;
+            }
+            wrap.appendChild(cell);
+            cursor.setDate(cursor.getDate() + 1);
+            if (cursor > today && cursor.getDay() === 1) break;   // stop on a whole week
+          }
+          return wrap;
         },
 
         renderWeekdayRow(habit, entries, today, label = habit.name) {

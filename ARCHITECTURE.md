@@ -194,6 +194,16 @@ the steppers in a row, sliding the squares out from under their dates.
 Future days are disabled everywhere (there's nothing to log on a day that hasn't happened),
 and stepping the week forward past today lands on today rather than refusing to move.
 
+A habit's detail view shows the same history as a **calendar** (`renderMonthGrid`) — weekday
+columns, date numbers, month named where one starts — because a row of thirty identical
+squares can't say which day any of them is. It draws whole weeks, dimming the days the
+30-day window doesn't cover rather than leaving ragged ends.
+
+Any tinted cell **carrying text** sets an 8-digit hex background rather than `opacity`
+(which would fade the text with it) and caps the alpha short of full strength, so the date
+or percentage stays readable on a completed day. Cells with no text — the week strip, the
+Insights consistency grid — can use the full range.
+
 Streak and the 30-day rate on each row stay "as of now" no matter which day is selected;
 only the progress line and the controls follow the selection, because that's the number the
 controls are about to change.
