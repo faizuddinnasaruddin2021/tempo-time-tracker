@@ -300,11 +300,27 @@ have no category, so the lens has nothing to filter them by.
 ### Observations ("How It's Going")
 
 `habitObservations()` turns the numbers into sentences: what's slipping and from what, what
-has gone quiet, where the target looks too high, which weekday never happens, and what's
-holding up. Each finding carries a **score**, and only the top few render — one line per
-habit is a wall nobody reads, so the list is deliberately capped.
+has gone quiet, **how much was missed**, where the target looks too high, which weekday
+never happens, and what's holding up.
 
-Two rules encoded there, both about not saying something useless:
+**The card is biased toward bad news, deliberately.** Findings sort by **tone first**
+(`bad` → `warn` → `good`) and only then by score, so a 40-day streak can never push a habit
+that's been missed all month off the card. Three things follow from that bias:
+
+- **Misses are stated as a count, not a rate.** "missed 25 of the last 30 days" is a thing
+  you can picture; "17%" is a thing you skim past. The percentage still trails the sentence.
+- **A rise off the floor is not news.** `is up — 17%, from 0%` reads as praise for a habit
+  that was skipped five days in six, so the "up" line needs a rate of at least 50% before it
+  fires. Below that the miss line is the honest headline, and it takes the slot.
+- The **30-day consistency tile** leads with `103 missed of 150` rather than `47 of 150
+  completed` — the same number, pointed at the thing you'd want to act on.
+
+Only `NOTE_LIMIT` (4) findings render, with a **Show all** button when there are more —
+capped because a wall of lines gets skipped, not because the rest is meant to be hidden.
+`ui.habits.showAllNotes` holds the toggle and is deliberately **not persisted**, like
+`selectedDay`: the card should open collapsed every time.
+
+Two more rules encoded there, both about not saying something useless:
 
 - A **dormant** habit (14+ days silent) reports *only* that. Its completion rate would
   restate the same silence in percentages.

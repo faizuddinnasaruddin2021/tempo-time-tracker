@@ -228,6 +228,28 @@ assert.equal(many.length, 2);
 assert.deepEqual(many.map(o => o.habitId), ['Gym', 'Read'], 'dormant outranks slipping');
 assert.ok(many[0].score > many[1].score);
 
+// 20b. A habit that has gone from nothing to barely-anything reports the misses, not the
+//      rise — "up, from 0%" is a cheerful way of saying five days in six were skipped
+const barely = habitObservations([h('Read')], { Read: span(2026, 8, 4, 5, 10) }, now, 10);
+const barelyText = barely.map(o => o.text).join(' ');
+assert.doesNotMatch(barelyText, /is up/, 'a rise off zero is not the headline at 17%');
+assert.match(barelyText, /missed 25 of the last 30 days — only 17%/);
+assert.equal(barely[0].tone, 'bad');
+
+// 20c. Between half and four fifths it is still a miss, just a quieter one
+const okish = habitObservations([h('Write')], { Write: span(2026, 7, 20, 20, 10) }, now, 10);
+assert.match(okish.map(o => o.text).join(' '), /missed 10 of the last 30 days — 67%/);
+assert.equal(okish.find(o => /missed/.test(o.text)).tone, 'warn');
+
+// 20d. Negatives sort above positives even when the good news scores higher on its own
+const mixed = habitObservations(
+  [h('Perfect'), h('Weak')],
+  { Perfect: span(2026, 6, 30, 40, 10), Weak: span(2026, 8, 4, 5, 10) },
+  now, 10);
+assert.equal(mixed[0].tone, 'bad', 'the missed habit leads, not the 40-day streak');
+assert.deepEqual([...new Set(mixed.map(o => o.tone))], ['bad', 'good'],
+  'every negative comes before every positive');
+
 // ---- Linking habits to focus sessions -----------------------------------------------
 const ms = (y, m, d, h, min = 0) => new Date(y, m - 1, d, h, min).getTime();
 
@@ -353,4 +375,4 @@ assert.deepEqual(habitHandLoggedMinutes([{ id: 'ghost', kind: 'count' }], {}, {}
   'a habit that has never been logged has no entry to read');
 assert.deepEqual(habitHandLoggedMinutes(undefined, undefined, undefined), {});
 
-console.log('habitMath: 33 checks passed');
+console.log('habitMath: 37 checks passed');

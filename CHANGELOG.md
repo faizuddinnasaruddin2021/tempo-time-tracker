@@ -4,6 +4,16 @@ All notable changes to Habitus. Newest first.
 
 ## [Unreleased] — 2026-08-08
 
+### Changed
+- **"How It's Going" leads with what you missed.** It used to be able to fill up with good
+  news — a habit logged five days in thirty was reported as "up — 17%, from 0%", which is
+  true and useless. Now findings sort bad news first, misses are counted rather than
+  rated ("Read missed 25 of the last 30 days — only 17%"), a rise doesn't get a line until
+  the habit is actually above 50%, and the consistency tile says "103 missed of 150" instead
+  of "47 of 150 completed".
+- **The list is capped at four with a "Show all" button.** Everything is still there — one
+  click, with a count of how much is behind it.
+
 ### Added
 - **Habit time now shows up in Calendar and Insights.** Time you log on a habit has no start
   and end, so it can't be a block on the clock — instead each day carries it: a dashed

@@ -2276,6 +2276,7 @@
     }
     .habit-note:first-child { border-top: none; }
     .habit-note-mark { flex-shrink: 0; }
+    .habit-note-more { margin-top: 12px; }
     .habit-note.bad .habit-note-mark { color: #F87171; }
     .habit-note.warn .habit-note-mark { color: #FBBF24; }
     .habit-note.good .habit-note-mark { color: var(--cat-exercise); }
@@ -3698,13 +3699,22 @@
           push(habit, 'bad', 70 + Math.abs(delta), `${habit.name} is slipping — ${pct}% of the ${spanLabel}, down from ${wasPct}%.`);
         } else if (delta <= -4) {
           push(habit, 'warn', 45 + Math.abs(delta), `${habit.name} has drifted down a little — ${pct}%, was ${wasPct}%.`);
-        } else if (delta >= 10) {
+        } else if (delta >= 10 && current.rate >= 0.5) {
+          // "up — 17%, from 0%" is a cheerful way to say five days in six were missed. A rise
+          // is only news once the habit is actually somewhere; below half, the misses are.
           push(habit, 'good', 40 + delta, `${habit.name} is up — ${pct}%, from ${wasPct}%.`);
         }
 
+        // What was missed, said as a count rather than a percentage — "missed 25 of 30 days"
+        // is a thing you can picture, "17%" is a thing you can skim past.
+        const missed = current.total - current.done;
         if (current.rate === 0) {
           push(habit, 'bad', 90, `${habit.name} gets logged but never reaches ${targetLabel} — the target may be set too high.`);
-        } else if (current.rate >= 0.8) {
+        } else if (current.rate < 0.5) {
+          push(habit, 'bad', 60 + Math.round((1 - current.rate) * 40), `${habit.name} missed ${missed} of the ${spanLabel} — only ${pct}%.`);
+        } else if (current.rate < 0.8) {
+          push(habit, 'warn', 30 + Math.round((1 - current.rate) * 40), `${habit.name} missed ${missed} of the ${spanLabel} — ${pct}%.`);
+        } else {
           push(habit, 'good', 50, `${habit.name} is holding strong at ${pct}%.`);
         }
 
@@ -3724,7 +3734,11 @@
         }
       });
 
-      return out.sort((a, b) => b.score - a.score).slice(0, limit);
+      // Bad before warn before good, and only then by score. Sorting on score alone let a
+      // 40-day streak outrank a habit that had been missed all month — the good news is the
+      // part you can afford to scroll for.
+      const rank = { bad: 0, warn: 1, good: 2 };
+      return out.sort((a, b) => rank[a.tone] - rank[b.tone] || b.score - a.score).slice(0, limit);
     }
 
     // Time you logged on a habit *by hand*, per day, pooled across habits — the minutes the
@@ -5398,6 +5412,9 @@
         // Both surfaces read these: a three-tile summary under the habit list, and the full
         // breakdown in Insights. Habit analysis never touches visibleSessions() — the lens
         // filters categories, and habits don't have any.
+        NOTE_LIMIT: 4,       // observations shown before "Show all" — a wall of lines gets skipped
+        // Deliberately not persisted: the card should open collapsed, the same as it opens on today
+        showAllNotes: false,
         WINDOW: 30,          // days behind every "last 30 days" number
         WEEKDAY_WINDOW: 90,  // a weekday pattern needs ~13 samples per day to mean anything
 
@@ -5446,7 +5463,10 @@
           const anyLogged = weekdays.some(s => s.hit);
 
           row.append(
-            tile('30-Day Consistency', total ? Math.round((done / total) * 100) + '%' : '—', `${done} of ${total} completed`),
+            // The miss count leads: "18 of 120 completed" reads like progress, "102 missed"
+            // reads like the thing you'd want to do something about.
+            tile('30-Day Consistency', total ? Math.round((done / total) * 100) + '%' : '—',
+              total ? `${total - done} missed of ${total}` : 'nothing to measure yet'),
             tile('Longest Streak', best.streak ? String(best.streak) : '—', best.streak ? best.name : 'no active streak'),
             tile('Best Day', anyLogged ? HABIT_WEEKDAYS[topDay.i] : '—',
               anyLogged ? Math.round((topDay.slot.hit / topDay.slot.total) * 100) + '% of the time' : 'nothing logged yet'),
@@ -5456,8 +5476,9 @@
           // reading the raw log would announce "nothing logged yet" over a completed day.
           const mergedLog = {};
           store.habits.forEach(habit => { mergedLog[habit.id] = this.entriesFor(habit); });
-          const observations = habitObservations(store.habits, mergedLog, today);
-          if (!observations.length) {
+          const all = habitObservations(store.habits, mergedLog, today, Infinity);
+          const observations = this.showAllNotes ? all : all.slice(0, this.NOTE_LIMIT);
+          if (!all.length) {
             notes.appendChild(Object.assign(document.createElement('div'), {
               className: 'insights-note',
               style: 'margin: 0;',
@@ -5481,6 +5502,21 @@
             }
             notes.appendChild(line);
           });
+
+          // The cap is so the card stays readable, not so the rest is hidden — every line is
+          // one click away, and the count says how much is behind it.
+          if (all.length > this.NOTE_LIMIT) {
+            const more = document.createElement('button');
+            more.className = 'btn-small habit-note-more';
+            more.textContent = this.showAllNotes
+              ? 'Show fewer'
+              : `Show all ${all.length} — ${all.length - observations.length} more`;
+            more.addEventListener('click', () => {
+              this.showAllNotes = !this.showAllNotes;
+              this.renderOverview();
+            });
+            notes.appendChild(more);
+          }
         },
 
         renderInsights() {
