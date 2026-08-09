@@ -34,6 +34,12 @@
 
       /* Archived/dimmed */
       --cat-archived: #6B7280;
+
+      /* Hand-logged habit time. One token for every surface that shows it — the calendar
+         chip, the week header, the chart series, the Insights grid — so it reads as one
+         thing. Amber rather than the accent: purple is the app's own chrome and the day's
+         session heat, and habit time has to be legible *on top of* that. */
+      --habit-time: #E8A33D;
     }
 
     html[data-theme="light"] {
@@ -44,6 +50,7 @@
       --text-secondary: #5A6072;
       --accent: #7C6FF7;
       --accent-alpha: rgba(124,111,247,0.08);
+      --habit-time: #A96A0B;   /* the dark-theme amber is unreadable on white */
     }
 
     body {
@@ -1882,22 +1889,25 @@
     .calendar-day-habit {
       align-self: flex-start;
       flex: none;
-      padding: 1px 7px;
-      border: 1px dashed var(--hairline);
+      padding: 2px 8px;
+      border: 1px dashed color-mix(in srgb, var(--habit-time) 55%, transparent);
       border-radius: var(--pill);
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-secondary);
+      background: color-mix(in srgb, var(--habit-time) 16%, transparent);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--habit-time);
       white-space: nowrap;
     }
     .week-col-head .wh {
-      display: block;
-      font-size: 10px;
-      font-weight: 600;
-      color: var(--text-secondary);
-      border-top: 1px dashed var(--hairline);
-      margin: 2px 8px 0;
-      padding-top: 2px;
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--habit-time);
+      background: color-mix(in srgb, var(--habit-time) 16%, transparent);
+      border: 1px dashed color-mix(in srgb, var(--habit-time) 55%, transparent);
+      border-radius: var(--pill);
+      padding: 0 7px;
+      margin-top: 3px;
     }
 
     .day-panel-section {
@@ -2364,6 +2374,22 @@
     .habit-cal-cell.today { box-shadow: inset 0 0 0 1px var(--accent); }
     /* Days the window doesn't cover still render, so the weeks stay whole */
     .habit-cal-cell.outside { opacity: 0.3; }
+
+    /* A cell carrying an amount as well as a date needs the room to stack them */
+    .habit-cal-cell.labelled {
+      flex-direction: column;
+      justify-content: center;
+      gap: 1px;
+      height: 46px;
+    }
+    .habit-cal-date { font-size: 11px; color: var(--text-secondary); line-height: 1.1; }
+    .habit-cal-amount { font-size: clamp(10px, 2.6vw, 12px); font-weight: 700; line-height: 1.1; white-space: nowrap; }
+    /* A day with time on it is the point of this grid — the date steps back once it has one */
+    .habit-cal-cell.labelled:has(.habit-cal-amount) .habit-cal-date { color: var(--text-primary); opacity: 0.75; }
+    .habit-cal-time .habit-cal-cell { border: 1px solid transparent; }
+    .habit-cal-time .habit-cal-cell:has(.habit-cal-amount) {
+      border-color: color-mix(in srgb, var(--habit-time) 45%, transparent);
+    }
 
     .habit-weekday-head {
       display: flex;
@@ -2884,7 +2910,7 @@
 
         <div class="card" id="insightsHabitTimeCard" style="display: none;">
           <div class="card-title">Habit Time by Day</div>
-          <div class="insights-note">Time you logged by hand on each habit, one square per day. Minutes that came from a focus session aren't here — they're already on the calendar as sessions.</div>
+          <div class="insights-note">Every day you put time into a habit, and how much — pooled across all of them. Minutes that came from a focus session aren't here; they're already on the calendar as sessions.</div>
           <div id="insightsHabitTime"></div>
         </div>
 
@@ -3533,6 +3559,9 @@
     }
 
     const HABIT_WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    // Must stay in step with --habit-time. A literal because the tint is built by appending
+    // an alpha to a hex (`color + 'a3'`), which a var() reference can't do.
+    const TIME_TINT = '#E8A33D';
 
     // What one day of a habit is worth. A weekly target spreads over the week, so clicking
     // a single square shouldn't try to finish the whole week in one go.
@@ -5581,36 +5610,38 @@
           if (!card || !box) return;
           box.innerHTML = '';
 
+          // One calendar for all of it, not one per habit: the question this answers is
+          // "which days did I put time in, and how much" — a stack of near-empty grids made
+          // that harder to see, not easier. Per-habit totals live on the habit's own detail.
+          const entries = this.handLoggedByDay();
           const oldestKey = habitDayKey(new Date(today.getTime() - (this.WINDOW - 1) * 86400000));
           const todayKey = habitDayKey(today);
-          const rows = store.habits.map(habit => {
-            const all = this.rawTimeFor(habit);
-            // Only the window's days set the scale and the total; older logs would make
-            // every recent day look faint and the total disagree with the squares.
-            const inWindow = Object.entries(all).filter(([k, v]) => k >= oldestKey && k <= todayKey && v > 0);
-            const total = inWindow.reduce((sum, [, v]) => sum + Math.round(v), 0);
-            const max = inWindow.reduce((m, [, v]) => Math.max(m, Math.round(v)), 0);
-            return { habit, entries: all, total, max };
-          }).filter(r => r.total > 0);
+          // Only the window's days set the scale and the total; older logs would make every
+          // recent day look faint and the total disagree with the squares.
+          const inWindow = Object.entries(entries).filter(([k, v]) => k >= oldestKey && k <= todayKey && v > 0);
+          const total = inWindow.reduce((sum, [, v]) => sum + v, 0);
+          const max = inWindow.reduce((m, [, v]) => Math.max(m, v), 0);
 
-          if (!rows.length) { card.style.display = 'none'; return; }
+          if (!total) { card.style.display = 'none'; return; }
           card.style.display = '';
 
-          rows.forEach(({ habit, entries, total, max }) => {
-            const head = document.createElement('div');
-            head.className = 'habit-time-head';
-            head.innerHTML = `<span class="habit-dot" style="background: ${habit.color}"></span>`;
-            head.appendChild(Object.assign(document.createElement('span'), {
-              className: 'habit-name', textContent: habit.name,
-            }));
-            head.appendChild(Object.assign(document.createElement('span'), {
-              className: 'habit-meta', textContent: formatMinutes(total) + ' in 30 days',
-            }));
-            box.appendChild(head);
-            box.appendChild(this.renderMonthGrid(habit, entries, today, {
-              max, format: v => formatMinutes(Math.round(v)),
-            }));
+          const head = document.createElement('div');
+          head.className = 'habit-time-head';
+          head.appendChild(Object.assign(document.createElement('span'), {
+            className: 'habit-meta', textContent:
+              `${formatMinutes(total)} across ${inWindow.length} day${inWindow.length === 1 ? '' : 's'}`,
+          }));
+          box.appendChild(head);
+
+          const grid = this.renderMonthGrid({}, entries, today, {
+            max,
+            color: TIME_TINT,
+            // Compact in the square (a phone gives it ~37px), spelled out in the tooltip
+            label: v => formatMinutes(v).replace(' ', ''),
+            format: v => formatMinutes(v),
           });
+          grid.classList.add('habit-cal-time');
+          box.appendChild(grid);
         },
 
         // One line per group: how consistent it is, the day it holds up best, and the habit
@@ -5794,17 +5825,30 @@
               + (key === todayKey ? ' today' : '')
               + (key > todayKey || key < oldestKey ? ' outside' : '');
             // The 1st carries its month, the way a wall calendar does
-            cell.textContent = cursor.getDate() === 1
+            const dateText = cursor.getDate() === 1
               ? cursor.toLocaleDateString(undefined, { month: 'short' }) + ' 1'
               : String(cursor.getDate());
             const shown = opts.format ? opts.format(value) : `${value}${habit.unit ? ' ' + habit.unit : ''}`;
+            // opts.label puts the amount in the square next to the date, for the grid that
+            // has to answer "how much" and not just "did I" — a tint alone can't say 40m.
+            if (opts.label) {
+              cell.classList.add('labelled');
+              cell.appendChild(Object.assign(document.createElement('span'), {
+                className: 'habit-cal-date', textContent: dateText,
+              }));
+              if (value) cell.appendChild(Object.assign(document.createElement('span'), {
+                className: 'habit-cal-amount', textContent: opts.label(value),
+              }));
+            } else {
+              cell.textContent = dateText;
+            }
             cell.title = `${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${shown}` : ''}`;
             if (value) {
               // 8-digit hex rather than opacity so the date isn't faded with the tint, and
               // capped short of full strength so the number stays readable on a done day —
               // these squares carry text, unlike the ones on the week strip.
               const alpha = Math.round(Math.min(0.7, this.dayAlpha(habit, value, opts.max)) * 255).toString(16).padStart(2, '0');
-              cell.style.background = habit.color + alpha;
+              cell.style.background = (opts.color || habit.color) + alpha;
             }
             wrap.appendChild(cell);
             cursor.setDate(cursor.getDate() + 1);
@@ -7297,7 +7341,7 @@
 
             const habitLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
             habitLine.setAttribute('d', habitPath);
-            habitLine.setAttribute('stroke', 'var(--cat-exercise)');
+            habitLine.setAttribute('stroke', 'var(--habit-time)');
             habitLine.setAttribute('stroke-width', '2');
             habitLine.setAttribute('stroke-dasharray', '4 3');
             habitLine.setAttribute('fill', 'none');
@@ -7308,7 +7352,7 @@
             key.setAttribute('y', padding.top - 6);
             key.setAttribute('text-anchor', 'end');
             key.setAttribute('font-size', '11');
-            key.setAttribute('fill', 'var(--cat-exercise)');
+            key.setAttribute('fill', 'var(--habit-time)');
             key.textContent = '┄ habit time';
             svg.appendChild(key);
           }

@@ -244,10 +244,25 @@ which still mean *sessions* and still have to reconcile with the day panel's lis
 can't filter them either — habits have no category — which is the other reason they can't
 join a filtered total.
 
-`ui.habits.renderTimeByDay()` draws the Insights card: one wall-calendar month grid per
-habit that has time in the window. It reuses `renderMonthGrid()` via its `opts` argument
-(`{ max, format }`) because habit time has no target to scale a tint against — it scales to
-the habit's own busiest day in the window instead.
+All of it is tinted with **`--habit-time`** (amber), one token shared by the calendar chip,
+the week header, the chart series and the Insights grid, so habit time reads as one thing
+wherever it appears. Amber rather than the accent because purple is already the app's chrome
+*and* the day cell's session heat — habit time has to stay legible on top of that.
+`TIME_TINT` is the same colour as a JS literal, needed because the grid builds its tint by
+appending an alpha to a hex (`color + 'a3'`), which `var()` can't do; keep the two in step.
+
+`ui.habits.renderTimeByDay()` draws the Insights card as **one pooled wall calendar**, not
+one grid per habit — the question it answers is "which days did I put time in, and how
+much", and a stack of mostly-empty per-habit grids made that harder to see rather than
+easier. Per-habit history stays on the habit's own detail view. It reuses
+`renderMonthGrid()` via its `opts` argument:
+
+| opt | Why |
+|---|---|
+| `max` | Habit time has no target to scale a tint against, so it scales to the busiest day in the window |
+| `color` | Overrides `habit.color`; the pooled grid has no single habit to take a colour from |
+| `label` | Puts the amount *in* the square beside the date — a tint alone can't say "40m" |
+| `format` | Spells the value out in the tooltip, in place of the habit's unit suffix |
 
 ### Groups
 

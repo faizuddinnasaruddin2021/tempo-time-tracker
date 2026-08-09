@@ -5,6 +5,11 @@ All notable changes to Habitus. Newest first.
 ## [Unreleased] — 2026-08-08
 
 ### Changed
+- **Habit time is much easier to spot.** It now has its own colour everywhere it appears —
+  the calendar chip, the week header, the Insights grid and the chart line — instead of
+  sitting in the same grey as everything around it.
+- **"Habit Time by Day" is one calendar instead of one per habit**, pooled across all of
+  them, with the amount written in the day itself rather than only in a tooltip.
 - **"How It's Going" leads with what you missed.** It used to be able to fill up with good
   news — a habit logged five days in thirty was reported as "up — 17%, from 0%", which is
   true and useless. Now findings sort bad news first, misses are counted rather than
