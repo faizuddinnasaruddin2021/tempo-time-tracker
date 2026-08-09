@@ -1876,6 +1876,50 @@
       min-width: 3px;
     }
 
+    /* Habit time: dashed, because unlike a session it isn't anchored to a clock. Deliberately
+       not folded into .calendar-day-total — that number means sessions and has to keep
+       matching the list in the day panel. */
+    .calendar-day-habit {
+      align-self: flex-start;
+      flex: none;
+      padding: 1px 7px;
+      border: 1px dashed var(--hairline);
+      border-radius: var(--pill);
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      white-space: nowrap;
+    }
+    .week-col-head .wh {
+      display: block;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      border-top: 1px dashed var(--hairline);
+      margin: 2px 8px 0;
+      padding-top: 2px;
+    }
+
+    .day-panel-section {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-secondary);
+      margin-top: 8px;
+    }
+    /* No start time to show and nothing to edit, so it reads quieter than a session row */
+    .day-panel-habit { border-style: dashed; border-color: var(--hairline); }
+
+    .habit-time-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 16px 0 8px;
+    }
+    .habit-time-head:first-child { margin-top: 4px; }
+    .habit-time-head .habit-meta { margin-left: auto; }
+
     /* --- Insights: fluid tiles instead of three breakpoints --- */
     .insights-row { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
     .insights-stat-tile .stat-number { font-size: clamp(28px, 4vw, 36px); }
@@ -2581,7 +2625,26 @@
       .calendar-buttons { flex-wrap: wrap; }
       .calendar-month { min-width: 0; font-size: 20px; }
       .day-panel { width: 100%; }
-      .calendar-day { min-height: 64px; padding: 8px; }
+      /* `aspect-ratio: 1` turns a min-height into a min-*width* as well, which forced the
+         seven columns 150px wider than the screen and slid the whole month sideways. Square
+         cells are a desktop luxury; on a phone the cell is as wide as a seventh and as tall
+         as its contents. */
+      .calendar-grid { gap: 4px; }
+      .calendar-day { aspect-ratio: auto; min-width: 0; min-height: 76px; padding: 5px 4px; gap: 4px; }
+      .calendar-day-number { font-size: 12px; }
+      /* Un-pinned from the corner: at this width it landed on top of the date */
+      .calendar-day-total { position: static; font-size: 9px; white-space: nowrap; }
+      /* The pill's padding and border eat a third of a 44px cell; a dashed rule says the
+         same thing and gives the number the full width. */
+      .calendar-day-habit {
+        align-self: stretch;
+        padding: 2px 0 0;
+        border: none;
+        border-top: 1px dashed var(--hairline);
+        border-radius: 0;
+        font-size: 8px;
+      }
+      .calendar-weekday { font-size: 10px; padding: 6px 0; }
       /* Week grid keeps its shape and scrolls sideways rather than squeezing to nothing */
       .week-view { --hour-h: 36px; }
 
@@ -2818,6 +2881,12 @@
           <div id="insightsHabitGrid" style="overflow-x: auto;"></div>
         </div>
 
+        <div class="card" id="insightsHabitTimeCard" style="display: none;">
+          <div class="card-title">Habit Time by Day</div>
+          <div class="insights-note">Time you logged by hand on each habit, one square per day. Minutes that came from a focus session aren't here — they're already on the calendar as sessions.</div>
+          <div id="insightsHabitTime"></div>
+        </div>
+
         <div class="card">
           <div class="card-title">Habits by Weekday</div>
           <div class="insights-note">How often each habit gets logged on each day of the week, over 90 days.</div>
@@ -2833,6 +2902,10 @@
           <div class="card insights-stat-tile">
             <div class="card-title">Total Sessions</div>
             <div class="stat-number" id="insightsTotalSessions">0</div>
+          </div>
+          <div class="card insights-stat-tile" title="Time logged by hand on habits. Habit time that came from a focus session is already counted under Total Focused.">
+            <div class="card-title">Habit Time</div>
+            <div class="stat-number" id="insightsHabitHours">0h</div>
           </div>
           <div class="card insights-stat-tile">
             <div class="card-title">Current Streak</div>
@@ -3652,6 +3725,23 @@
       });
 
       return out.sort((a, b) => b.score - a.score).slice(0, limit);
+    }
+
+    // Time you logged on a habit *by hand*, per day, pooled across habits — the minutes the
+    // session views don't already know about. Deliberately the raw logs rather than
+    // minutesFor(): a linked habit's minutes are focus sessions, and folding those in here
+    // would bill the same hour to the calendar twice, once as a session and once as a habit.
+    // A duration habit keeps its minutes in the main log; every other kind has a time track.
+    function habitHandLoggedMinutes(habits, rawLog, rawMinutes) {
+      const out = {};
+      (habits || []).forEach(habit => {
+        const src = ((habit.kind === 'duration' ? rawLog : rawMinutes) || {})[habit.id] || {};
+        Object.entries(src).forEach(([key, mins]) => {
+          const n = Math.round(mins) || 0;
+          if (n > 0) out[key] = (out[key] || 0) + n;
+        });
+      });
+      return out;
     }
     // END habitMath
 
@@ -4665,6 +4755,18 @@
           return store.habitMinutes[habitId];
         },
 
+        // The time track a habit keeps by hand, whichever log it lives in. What Calendar and
+        // Insights show — see habitHandLoggedMinutes for why it's the raw log, not minutesFor.
+        rawTimeFor(habit) {
+          return (habit.kind === 'duration' ? store.habitLog : store.habitMinutes)[habit.id] || {};
+        },
+
+        // Hand-logged habit minutes per day, pooled — Calendar and Insights read this to show
+        // time that never went through the timer.
+        handLoggedByDay() {
+          return habitHandLoggedMinutes(store.habits, store.habitLog, store.habitMinutes);
+        },
+
         // Deliberately raw store.sessions, not visibleSessions(): hiding a category in the
         // lens is a question about the session views, and it must not quietly rewrite a
         // habit's streak. Recomputed per read — a personal log is far too small to cache.
@@ -4703,9 +4805,11 @@
 
         // How strongly to tint one day's square, judged against what a single day is worth
         // rather than a whole week's target.
-        dayAlpha(habit, value) {
+        // `max` overrides the denominator for tracks that have no target to measure against —
+        // habit time is scaled to its own busiest day instead.
+        dayAlpha(habit, value, max) {
           if (!value) return 0;
-          return 0.35 + 0.65 * Math.min(1, value / habitDayTarget(habit));
+          return 0.35 + 0.65 * Math.min(1, value / (max || habitDayTarget(habit)));
         },
 
         // Clicking a square logs that day outright: a full day's worth if it's short, or
@@ -5390,6 +5494,11 @@
             table.appendChild(Object.assign(document.createElement('div'), {
               className: 'empty-state', textContent: 'No habits yet. Add one on the Habits page.',
             }));
+            // Delete every habit and the time card would otherwise sit there with the old ones
+            const timeCard = document.getElementById('insightsHabitTimeCard');
+            const timeBox = document.getElementById('insightsHabitTime');
+            if (timeCard) timeCard.style.display = 'none';
+            if (timeBox) timeBox.innerHTML = '';
             return;
           }
 
@@ -5422,6 +5531,49 @@
           weekdayBox.appendChild(head);
           store.habits.forEach(habit => {
             weekdayBox.appendChild(this.renderWeekdayRow(habit, this.entriesFor(habit), today));
+          });
+
+          this.renderTimeByDay(today);
+        },
+
+        // Hand-logged habit time as a wall calendar per habit — a bare strip of squares can't
+        // say which day any of them was, and time you typed in is exactly the thing you go
+        // looking for by date. Card hides itself when nobody has logged any.
+        renderTimeByDay(today) {
+          const card = document.getElementById('insightsHabitTimeCard');
+          const box = document.getElementById('insightsHabitTime');
+          if (!card || !box) return;
+          box.innerHTML = '';
+
+          const oldestKey = habitDayKey(new Date(today.getTime() - (this.WINDOW - 1) * 86400000));
+          const todayKey = habitDayKey(today);
+          const rows = store.habits.map(habit => {
+            const all = this.rawTimeFor(habit);
+            // Only the window's days set the scale and the total; older logs would make
+            // every recent day look faint and the total disagree with the squares.
+            const inWindow = Object.entries(all).filter(([k, v]) => k >= oldestKey && k <= todayKey && v > 0);
+            const total = inWindow.reduce((sum, [, v]) => sum + Math.round(v), 0);
+            const max = inWindow.reduce((m, [, v]) => Math.max(m, Math.round(v)), 0);
+            return { habit, entries: all, total, max };
+          }).filter(r => r.total > 0);
+
+          if (!rows.length) { card.style.display = 'none'; return; }
+          card.style.display = '';
+
+          rows.forEach(({ habit, entries, total, max }) => {
+            const head = document.createElement('div');
+            head.className = 'habit-time-head';
+            head.innerHTML = `<span class="habit-dot" style="background: ${habit.color}"></span>`;
+            head.appendChild(Object.assign(document.createElement('span'), {
+              className: 'habit-name', textContent: habit.name,
+            }));
+            head.appendChild(Object.assign(document.createElement('span'), {
+              className: 'habit-meta', textContent: formatMinutes(total) + ' in 30 days',
+            }));
+            box.appendChild(head);
+            box.appendChild(this.renderMonthGrid(habit, entries, today, {
+              max, format: v => formatMinutes(Math.round(v)),
+            }));
           });
         },
 
@@ -5578,7 +5730,9 @@
         // The last 30 days as a real calendar — weekday columns, date numbers, month names
         // where one starts. A bare row of 30 identical squares couldn't tell you which day
         // any of them was.
-        renderMonthGrid(habit, entries, today) {
+        // opts: { max, format } — the time track has no target, so it scales to its own
+        // busiest day and reads its tooltip in hours and minutes rather than units.
+        renderMonthGrid(habit, entries, today, opts = {}) {
           const wrap = document.createElement('div');
           wrap.className = 'habit-cal';
 
@@ -5607,12 +5761,13 @@
             cell.textContent = cursor.getDate() === 1
               ? cursor.toLocaleDateString(undefined, { month: 'short' }) + ' 1'
               : String(cursor.getDate());
-            cell.title = `${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${value}${habit.unit ? ' ' + habit.unit : ''}` : ''}`;
+            const shown = opts.format ? opts.format(value) : `${value}${habit.unit ? ' ' + habit.unit : ''}`;
+            cell.title = `${cursor.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}${value ? ` — ${shown}` : ''}`;
             if (value) {
               // 8-digit hex rather than opacity so the date isn't faded with the tint, and
               // capped short of full strength so the number stays readable on a done day —
               // these squares carry text, unlike the ones on the week strip.
-              const alpha = Math.round(Math.min(0.7, this.dayAlpha(habit, value)) * 255).toString(16).padStart(2, '0');
+              const alpha = Math.round(Math.min(0.7, this.dayAlpha(habit, value, opts.max)) * 255).toString(16).padStart(2, '0');
               cell.style.background = habit.color + alpha;
             }
             wrap.appendChild(cell);
@@ -6412,6 +6567,9 @@
           }
 
           const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+          // Once for the whole month rather than once per cell — 42 cells re-walking every
+          // habit log is the only place here that would notice.
+          const habitMins = ui.habits.handLoggedByDay();
 
           dayNames.forEach(day => {
             const header = document.createElement('div');
@@ -6429,20 +6587,20 @@
 
           for (let i = 1; i < firstDayOfWeek; i++) {
             const empty = new Date(year, month, 1 - (firstDayOfWeek - i));
-            const cell = this.createDayCell(empty, true);
+            const cell = this.createDayCell(empty, true, habitMins);
             grid.appendChild(cell);
           }
 
           for (let day = 1; day <= lastDay.getDate(); day++) {
             const date = new Date(year, month, day);
-            const cell = this.createDayCell(date, false);
+            const cell = this.createDayCell(date, false, habitMins);
             grid.appendChild(cell);
           }
 
           const lastDayOfWeek = lastDay.getDay() || 7;
           for (let i = 1; i <= 7 - lastDayOfWeek; i++) {
             const empty = new Date(year, month + 1, i);
-            const cell = this.createDayCell(empty, true);
+            const cell = this.createDayCell(empty, true, habitMins);
             grid.appendChild(cell);
           }
         },
@@ -6467,18 +6625,23 @@
           });
 
           // Row 1: corner + day headers
+          const habitMins = ui.habits.handLoggedByDay();
           wrap.appendChild(document.createElement('div'));
           days.forEach(dayStart => {
             const dayEnd = dayStart + 86400000;
             const totalMs = visibleSessions()
               .filter(s => s.start >= dayStart && s.start < dayEnd)
               .reduce((sum, s) => sum + (s.end - s.start), 0);
+            // Habit time belongs to the day, not to any hour, so the header is the only
+            // honest place for it in a grid that positions everything by clock time.
+            const habitDayMins = habitMins[habitDayKey(new Date(dayStart))] || 0;
 
             const head = document.createElement('div');
             head.className = 'week-col-head';
             if (dayStart === todayStart) head.classList.add('today');
             head.innerHTML = `<span class="d">${new Date(dayStart).toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' })}</span>
-              <span class="t">${totalMs ? formatMinutes(Math.round(totalMs / 60000)) : '—'}</span>`;
+              <span class="t">${totalMs ? formatMinutes(Math.round(totalMs / 60000)) : '—'}</span>`
+              + (habitDayMins ? `<span class="wh" title="logged on habits — no start time">+ ${formatMinutes(habitDayMins)}</span>` : '');
             head.title = 'Open the day panel';
             head.addEventListener('click', () => this.openDayPanel(new Date(dayStart)));
             wrap.appendChild(head);
@@ -6658,7 +6821,7 @@
           });
         },
 
-        createDayCell(date, otherMonth) {
+        createDayCell(date, otherMonth, habitMins = {}) {
           const cell = document.createElement('div');
           cell.className = 'calendar-day';
           if (otherMonth) cell.classList.add('other-month');
@@ -6718,6 +6881,20 @@
               legend.push(`${cat?.name || 'Archived'} · ${mins >= 60 ? Math.floor(mins / 60) + 'h ' : ''}${mins % 60}m`);
             });
             segments.title = legend.join('\n');
+
+            // Habit time has no clock, so it can't be a stripe or a session — it gets its own
+            // dashed chip and stays out of the day total, which still means "sessions".
+            // Added before the stripes, which take the floor of the cell via margin-top:auto.
+            const habitDayMins = habitMins[habitDayKey(date)] || 0;
+            if (habitDayMins > 0) {
+              const chip = document.createElement('div');
+              chip.className = 'calendar-day-habit';
+              // Compact: a month cell is a seventh of a phone screen, and "+ 1h 41m" with its
+              // spaces is wider than that — it clipped mid-glyph.
+              chip.textContent = '+' + formatMinutes(habitDayMins).replace(' ', '');
+              chip.title = `${formatMinutes(habitDayMins)} logged on habits — no start time, so it isn't on the clock`;
+              cell.appendChild(chip);
+            }
 
             if (Object.keys(catTotals).length > 0) {
               cell.appendChild(segments);
@@ -6808,6 +6985,38 @@
                   content.appendChild(item);
                 });
             }
+
+            // Habit time listed after the sessions, per habit, because "45m" against a day
+            // with nothing on the clock is otherwise unexplainable. Not editable here — the
+            // habit row owns that number, and two places to change it is one too many.
+            const dayKey = habitDayKey(dayDate);
+            const habitRows = store.habits
+              .map(h => ({ habit: h, mins: Math.round(ui.habits.rawTimeFor(h)[dayKey] || 0) }))
+              .filter(r => r.mins > 0);
+
+            if (habitRows.length) {
+              content.appendChild(Object.assign(document.createElement('div'), {
+                className: 'day-panel-section', textContent: 'Logged on habits',
+              }));
+              habitRows.forEach(({ habit, mins }) => {
+                const row = document.createElement('div');
+                row.className = 'session-item day-panel-habit';
+                row.style.setProperty('--row-c', habit.color);
+                row.innerHTML = `
+                  <div class="session-item-content">
+                    <div class="dot" style="background-color: ${habit.color};"></div>
+                    <div class="session-item-info">
+                      <div class="session-item-header">
+                        <span class="session-category"></span>
+                        <span class="session-time">no start time</span>
+                      </div>
+                      <div class="session-duration">${formatMinutes(mins)}</div>
+                    </div>
+                  </div>`;
+                row.querySelector('.session-category').textContent = habit.name;
+                content.appendChild(row);
+              });
+            }
           }
 
           if (dayPanel) {
@@ -6845,11 +7054,16 @@
           const currentStreak = calculateCurrentStreak();
           const bestStreak = calculateBestStreak();
 
+          // Hand-logged only, so this tile and "Total Focused" never count the same minute
+          const habitMins = Object.values(ui.habits.handLoggedByDay()).reduce((a, m) => a + m, 0);
+
           const totalHoursEl = document.getElementById('insightsTotalHours');
           const totalSessionsEl = document.getElementById('insightsTotalSessions');
           const currentStreakEl = document.getElementById('insightsCurrentStreak');
           const bestStreakEl = document.getElementById('insightsBestStreak');
+          const habitHoursEl = document.getElementById('insightsHabitHours');
 
+          if (habitHoursEl) habitHoursEl.textContent = habitMins >= 60 ? Math.floor(habitMins / 60) + 'h' : habitMins + 'm';
           if (totalHoursEl) totalHoursEl.textContent = totalHours + 'h';
           if (totalSessionsEl) totalSessionsEl.textContent = totalSessions;
           if (currentStreakEl) currentStreakEl.textContent = currentStreak + ' 🔥';
@@ -6924,14 +7138,28 @@
             weeks.push({ start: weekStart, end: weekEnd });
           }
 
+          // Fractional hours, not floored: a week with 40 minutes of habit time is a real
+          // week, and flooring would flatten the whole second series to zero.
           const weeklyHours = weeks.map(w => {
             const sessions = visibleSessions().filter(s => s.start >= w.start.getTime() && s.start < w.end.getTime() + 24 * 60 * 60 * 1000);
-            const totalMs = sessions.reduce((sum, s) => sum + (s.end - s.start), 0);
-            return Math.floor(totalMs / 3600000);
+            return sessions.reduce((sum, s) => sum + (s.end - s.start), 0) / 3600000;
           });
 
+          const habitByDay = ui.habits.handLoggedByDay();
+          const weeklyHabitHours = weeks.map(w => {
+            let mins = 0;
+            const cursor = new Date(w.start);
+            cursor.setHours(0, 0, 0, 0);
+            while (cursor <= w.end) {
+              mins += habitByDay[habitDayKey(cursor)] || 0;
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            return mins / 60;
+          });
+          const anyHabitHours = weeklyHabitHours.some(h => h > 0);
+
           // Round the top of the scale to a multiple of 5 so the 5 gridline labels stay whole hours
-          const maxHours = Math.max(5, Math.ceil(Math.max(...weeklyHours) / 5) * 5);
+          const maxHours = Math.max(5, Math.ceil(Math.max(...weeklyHours, ...weeklyHabitHours) / 5) * 5);
           const width = 450;
           const height = 200;
           const padding = { top: 20, right: 20, bottom: 30, left: 40 };
@@ -7020,6 +7248,34 @@
           line.setAttribute('stroke-width', '2');
           line.setAttribute('fill', 'none');
           svg.appendChild(line);
+
+          // Habit time as a dashed second line — same axis, but it has no clock behind it,
+          // so it shouldn't look like the same kind of measurement.
+          if (anyHabitHours) {
+            let habitPath = '';
+            weeklyHabitHours.forEach((hours, idx) => {
+              const x = padding.left + (plotWidth / 11) * idx;
+              const y = padding.top + plotHeight - (plotHeight * hours) / maxHours;
+              habitPath += (idx === 0 ? 'M' : 'L') + ` ${x} ${y}`;
+            });
+
+            const habitLine = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            habitLine.setAttribute('d', habitPath);
+            habitLine.setAttribute('stroke', 'var(--cat-exercise)');
+            habitLine.setAttribute('stroke-width', '2');
+            habitLine.setAttribute('stroke-dasharray', '4 3');
+            habitLine.setAttribute('fill', 'none');
+            svg.appendChild(habitLine);
+
+            const key = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            key.setAttribute('x', width - padding.right);
+            key.setAttribute('y', padding.top - 6);
+            key.setAttribute('text-anchor', 'end');
+            key.setAttribute('font-size', '11');
+            key.setAttribute('fill', 'var(--cat-exercise)');
+            key.textContent = '┄ habit time';
+            svg.appendChild(key);
+          }
 
           // Dots on points
           points.forEach((p, idx) => {

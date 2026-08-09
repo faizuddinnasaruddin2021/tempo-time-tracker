@@ -62,12 +62,12 @@ const { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
         habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
         habitBestStreak, habitDaysSinceLog, habitObservations,
         sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats,
-        habitDayTarget, habitLastMinutes } =
+        habitDayTarget, habitLastMinutes, habitHandLoggedMinutes } =
   new Function(hsrc[1] + `; return { habitDayKey, habitPeriodDays, habitProgress, habitStreak,
     habitPeriodsIn, habitCompletionRate, habitWeekdayRate, habitTotal,
     habitBestStreak, habitDaysSinceLog, habitObservations,
     sessionMinutesByDay, habitMergedEntries, habitTimeEntries, habitGroupStats,
-    habitDayTarget, habitLastMinutes };`)();
+    habitDayTarget, habitLastMinutes, habitHandLoggedMinutes };`)();
 
 const daily = { kind: 'count', target: 10, period: 'day' };
 const weekly = { kind: 'check', target: 3, period: 'week' };
@@ -325,4 +325,32 @@ assert.equal(habitLastMinutes({ '2026-08-05': 0 }, '2026-08-08'), null, 'a zero 
 assert.equal(habitLastMinutes({}, '2026-08-08'), null);
 assert.equal(habitLastMinutes(undefined, '2026-08-08'), null);
 
-console.log('habitMath: 31 checks passed');
+// ---- Habit time on the calendar ------------------------------------------------------
+// 32. Only hand-logged minutes: a linked habit's session time is already a session, and
+//     billing it here would put the same hour on the calendar twice.
+const timeHabits = [
+  { id: 'run', kind: 'duration', catId: 'exercise' },   // minutes live in habitLog
+  { id: 'read', kind: 'count' },                        // minutes live in habitMinutes
+  { id: 'meditate', kind: 'check' },
+];
+const rawLog = { run: { '2026-08-01': 40, '2026-08-02': 20 } };
+const rawMins = { read: { '2026-08-01': 15 }, meditate: { '2026-08-03': 10 } };
+assert.deepEqual(habitHandLoggedMinutes(timeHabits, rawLog, rawMins), {
+  '2026-08-01': 55, '2026-08-02': 20, '2026-08-03': 10,
+}, 'a duration habit reads its main log, everything else reads the time track');
+
+// A duration habit must NOT pick up its time track, nor a count habit its unit log
+assert.deepEqual(habitHandLoggedMinutes([{ id: 'run', kind: 'duration' }],
+  { run: { '2026-08-01': 40 } }, { run: { '2026-08-01': 999 } }), { '2026-08-01': 40 });
+assert.deepEqual(habitHandLoggedMinutes([{ id: 'read', kind: 'count' }],
+  { read: { '2026-08-01': 999 } }, { read: { '2026-08-01': 15 } }), { '2026-08-01': 15 },
+  '999 pages is not 999 minutes');
+
+// 33. Zero and absence are the same thing here too — no empty days on the calendar
+assert.deepEqual(habitHandLoggedMinutes([{ id: 'a', kind: 'count' }], {}, { a: { '2026-08-01': 0 } }), {});
+assert.deepEqual(habitHandLoggedMinutes([], {}, {}), {});
+assert.deepEqual(habitHandLoggedMinutes([{ id: 'ghost', kind: 'count' }], {}, {}), {},
+  'a habit that has never been logged has no entry to read');
+assert.deepEqual(habitHandLoggedMinutes(undefined, undefined, undefined), {});
+
+console.log('habitMath: 33 checks passed');

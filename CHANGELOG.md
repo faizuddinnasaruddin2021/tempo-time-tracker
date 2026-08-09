@@ -4,6 +4,18 @@ All notable changes to Habitus. Newest first.
 
 ## [Unreleased] — 2026-08-08
 
+### Added
+- **Habit time now shows up in Calendar and Insights.** Time you log on a habit has no start
+  and end, so it can't be a block on the clock — instead each day carries it: a dashed
+  `+ 45m` chip on the month cell, a line under the day in week view, and a row in the day
+  panel. Insights gets a **Habit Time** tile, a dashed second line on the 12-week chart, and
+  a **Habit Time by Day** card — one wall-calendar per habit, so you can find the day you're
+  thinking of by its date rather than counting squares.
+- Only time you logged **by hand** appears there. Minutes a linked habit picked up from a
+  focus session are already on the calendar as that session, and counting them again would
+  quietly double your week. The day total and Total Focused still mean sessions only, so
+  they keep matching the sessions listed underneath them.
+
 ### Changed
 - **On a phone the page is now an app frame.** The header and a bottom tab bar are pinned
   and only the view between them scrolls — no page scroll, no rubber-banding, no scrolling
@@ -13,8 +25,9 @@ All notable changes to Habitus. Newest first.
   tab bar and sheets respect the notch and home indicator. Nothing changes above 760px.
 - **Fixed everything that ran off the side of a phone screen:** the settings and sync buttons
   (previously off-screen entirely), the 24-hour focus heatmap (now scrolls sideways rather
-  than squashing), the 30-day habit consistency strip, the weekday row, and the calendar's
-  button row.
+  than squashing), the 30-day habit consistency strip, the weekday row, the calendar's
+  button row, and the month grid — square day cells forced seven columns wider than the
+  screen, so on a phone a cell is now a seventh wide and as tall as it needs to be.
 
 - **"Group" now means habits only.** The session-side slicing is called an **axis**
   everywhere: "Axis" in the lens bar, "Manage axes…", "Add axis", and the no-value bucket is

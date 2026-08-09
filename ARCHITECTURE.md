@@ -192,6 +192,7 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 | `habitGroupStats(habits, log, today, days)` | A group's pooled rate, its weakest habit and its best weekday |
 | `habitDayTarget(habit)` | What one day is worth — a weekly target divided down, never below 1 |
 | `habitLastMinutes(entries, beforeKey)` | The last time logged before a day, or `null` — the one-tap suggestion |
+| `habitHandLoggedMinutes(habits, log, minutes)` | Minutes per day across all habits, hand-logged only — what Calendar and Insights show |
 
 ### The week strip and the selected day
 
@@ -222,6 +223,31 @@ Insights consistency grid — can use the full range.
 Streak and the 30-day rate on each row stay "as of now" no matter which day is selected;
 only the progress line and the controls follow the selection, because that's the number the
 controls are about to change.
+
+### Habit time on the session views
+
+Calendar and Insights show habit time, but only the **hand-logged** part —
+`habitHandLoggedMinutes(habits, store.habitLog, store.habitMinutes)`, reached through
+`ui.habits.handLoggedByDay()` (pooled per day) and `ui.habits.rawTimeFor(habit)` (one
+habit's track). A duration habit keeps its minutes in `habitLog`; every other kind keeps
+them in `habitMinutes` — the helper picks the right log per habit.
+
+> **Never surface `minutesFor()` on a session view.** It folds in the linked category's
+> focus sessions, which the Calendar already draws as sessions — the same hour would be
+> billed twice, once as a block and once as habit time.
+
+The other rule: habit minutes have **no clock**, so they never become a session-shaped
+thing. They render as a dashed chip on a month cell, a line under the day column header in
+week view, a listed-but-not-editable row in the day panel, and a dashed second series on the
+12-week chart. They stay out of `.calendar-day-total` and out of "Total Focused", both of
+which still mean *sessions* and still have to reconcile with the day panel's list. The lens
+can't filter them either — habits have no category — which is the other reason they can't
+join a filtered total.
+
+`ui.habits.renderTimeByDay()` draws the Insights card: one wall-calendar month grid per
+habit that has time in the window. It reuses `renderMonthGrid()` via its `opts` argument
+(`{ max, format }`) because habit time has no target to scale a tint against — it scales to
+the habit's own busiest day in the window instead.
 
 ### Groups
 
