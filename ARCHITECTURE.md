@@ -338,6 +338,25 @@ Roughly in file order:
 | `EVENT LISTENERS` | `setupEventListeners()`, including keyboard shortcuts |
 | `INIT` | `DOMContentLoaded` — load, wire up, render, restore a mid-flight timer |
 
+### The mobile shell
+
+Below 760px (one `@media` block at the end of the stylesheet, nothing above it) the layout
+stops being a document and becomes an app frame: `body` is a `100dvh` flex column with
+`overflow: hidden`, `.top-bar` is pinned at the top, `.nav` is `position: fixed` at the
+bottom as a tab bar, and **`.container` is the only scroll region**. Consequences worth
+knowing:
+
+- Anything that needs to scroll the view must scroll `.container`, not `window`.
+- A new full-width child of `body` needs `width: 100%` if it carries `margin: 0 auto` —
+  auto margins beat flex `stretch` and it will shrink to its content.
+- Fixed overlays are stacked around the tab bar's `z-index: 90` (day panel 100, modals 200,
+  toast 400). Anything new that must sit above the tabs goes above 90.
+- `dvh`, not `vh`: `vh` is the *largest* viewport on mobile Safari, so the tab bar would hide
+  under the browser chrome until you scrolled.
+
+It's CSS only — the phone reuses the desktop's markup, so there is no second nav to keep in
+sync. Desktop styles are untouched by this block.
+
 Rendering is deliberately dumb: there is no virtual DOM and no reactivity. A mutation calls
 `saveStore()` then `refreshAll()`, which re-renders every session-derived view from scratch.
 At the scale of a personal time log this is fast enough and is far easier to reason about

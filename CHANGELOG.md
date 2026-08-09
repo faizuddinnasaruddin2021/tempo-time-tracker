@@ -5,6 +5,17 @@ All notable changes to Habitus. Newest first.
 ## [Unreleased] — 2026-08-08
 
 ### Changed
+- **On a phone the page is now an app frame.** The header and a bottom tab bar are pinned
+  and only the view between them scrolls — no page scroll, no rubber-banding, no scrolling
+  back up to change tabs. The tab bar is the same nav element the desktop uses, just
+  repositioned, so there's no second copy to drift. Modals open as bottom sheets with 16px
+  inputs (below that, iOS zooms the viewport on focus and never zooms back), and the header,
+  tab bar and sheets respect the notch and home indicator. Nothing changes above 760px.
+- **Fixed everything that ran off the side of a phone screen:** the settings and sync buttons
+  (previously off-screen entirely), the 24-hour focus heatmap (now scrolls sideways rather
+  than squashing), the 30-day habit consistency strip, the weekday row, and the calendar's
+  button row.
+
 - **"Group" now means habits only.** The session-side slicing is called an **axis**
   everywhere: "Axis" in the lens bar, "Manage axes…", "Add axis", and the no-value bucket is
   **Unassigned** rather than "Ungrouped". Saved filters migrate, so anything you had hidden

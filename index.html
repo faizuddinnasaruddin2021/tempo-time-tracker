@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>Habitus — Habits &amp; Focus</title>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -2524,15 +2524,90 @@
     }
     .toast button:hover { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 
+    /* ===== MOBILE APP SHELL =====
+       On a phone the page stops being a page: the viewport is the app frame, the header and
+       the tab bar are pinned, and only the view between them scrolls. Nothing here changes
+       above 760px — the desktop layout is the one in the rules above. */
     @media (max-width: 760px) {
-      .top-bar { flex-wrap: wrap; gap: 12px; padding: 20px 16px; }
-      .container { padding: 0 16px; }
-      .calendar-header, .calendar-grid, .week-scroll { padding-left: 16px; padding-right: 16px; }
+      /* dvh, not vh: vh is the *largest* viewport on mobile Safari, so the tab bar sits
+         under the browser chrome until you scroll. */
+      html { height: 100%; }
+      body {
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        overscroll-behavior: none;   /* no rubber-band on the document behind the app */
+      }
+
+      /* width:100% because the `margin: 0 auto` these carry for the desktop centring beats
+         flex `stretch` and would shrink them to their content. */
+      .top-bar { flex: none; width: 100%; gap: 12px; padding: max(10px, env(safe-area-inset-top)) 16px 10px; }
+      .wordmark { font-size: 22px; }
+
+      /* The one scroll region. min-height:0 or the flex child refuses to shrink and the
+         document scrolls after all. */
+      .container {
+        flex: 1;
+        width: 100%;
+        min-height: 0;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-y: contain;
+        padding: 0 16px calc(72px + env(safe-area-inset-bottom));
+      }
+
+      /* Same nav element, repositioned — no second markup for the phone to drift out of sync. */
+      .nav {
+        position: fixed;
+        left: 0; right: 0; bottom: 0;
+        z-index: 90;                 /* under the day panel (100) and modals (200) */
+        gap: 4px;
+        padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+        background: color-mix(in srgb, var(--card-bg) 92%, transparent);
+        backdrop-filter: blur(14px);
+        border-top: 1px solid var(--card-border);
+      }
+      .nav-pill { flex: 1; padding: 11px 4px; border-color: transparent; font-size: 13px; }
+      .nav-pill.active { background: var(--accent-alpha); color: var(--accent); border-color: transparent; }
+      /* JS sets this inline, hence the override: a fifth item would break the tab row. */
+      #streakPill { display: none !important; }
+
+      .toast { bottom: calc(78px + env(safe-area-inset-bottom)); width: calc(100% - 32px); }
+
+      /* Views already sit inside the container's padding — their own gutters would double it. */
+      .calendar-header, .calendar-grid, .week-scroll, .focus-grid { padding-left: 0; padding-right: 0; }
+      .calendar-header { flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+      .calendar-buttons { flex-wrap: wrap; }
       .calendar-month { min-width: 0; font-size: 20px; }
       .day-panel { width: 100%; }
       .calendar-day { min-height: 64px; padding: 8px; }
       /* Week grid keeps its shape and scrolls sideways rather than squeezing to nothing */
       .week-view { --hour-h: 36px; }
+
+      /* Modals become bottom sheets — reachable by thumb, and they don't pretend to float. */
+      .modal-overlay { align-items: flex-end; }
+      .modal { width: 100%; max-width: none; max-height: 88dvh; border-radius: 20px 20px 0 0; }
+      .modal-header { padding: 18px 16px; }
+      .modal-content { padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+      /* 16px or iOS zooms the whole viewport on focus and never zooms back. */
+      .form-input, .form-select, .form-textarea { font-size: 16px; }
+
+      /* 25 fixed columns can't fit any phone; scroll it rather than squash it unreadable. */
+      .insights-heatmap-grid { grid-template-columns: auto repeat(24, 28px); overflow-x: auto; }
+      .heatmap-cell { width: 28px; height: 28px; }
+
+      /* A 30-day strip of fixed squares overflows; here the squares give, not the row. */
+      .habit-grid-row { gap: 2px; }
+      .habit-grid-label { flex-basis: 68px; }
+      .habit-grid-cell { width: auto; flex: 1 1 0; min-width: 0; }
+      /* flex:1 1 0 still floors at min-content, so "Sun" pushed the row off a 320px screen. */
+      .habit-weekday-head, .habit-weekday-row { gap: 4px; }
+      .habit-weekday-head span, .habit-weekday-cell { min-width: 0; overflow: hidden; }
+
+      /* Three tiles across 343px wraps every label to three lines; two and a wide one reads. */
+      .habit-summary-grid { grid-template-columns: 1fr 1fr; }
+      .habit-summary-stat:last-child { grid-column: 1 / -1; }
     }
 
     @media (prefers-reduced-motion: reduce) {
