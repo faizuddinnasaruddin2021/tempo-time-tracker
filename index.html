@@ -2767,6 +2767,11 @@
     <!-- Habits View -->
     <div id="habitsView" class="view active">
       <div class="habits-grid">
+        <!-- Above everything, because it decides how much of everything there is -->
+        <div style="display: flex; justify-content: flex-end;">
+          <button class="btn-small" id="habitViewToggle" title="Switch between the full view and a compact one">Compact</button>
+        </div>
+
         <!-- Quick read on how it's going; the full breakdown lives in Insights -->
         <div class="card habit-hide-compact">
           <div class="card-title">How It's Going</div>
@@ -2789,10 +2794,7 @@
         <div class="card">
           <div class="habit-week-header">
             <div class="card-title" id="habitWeekMonth" style="margin: 0;"></div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-              <button class="btn-small" id="habitWeekToday" style="display: none;">Today</button>
-              <button class="btn-small" id="habitViewToggle" title="Switch between the full view and a compact one">Compact</button>
-            </div>
+            <button class="btn-small" id="habitWeekToday" style="display: none;">Today</button>
           </div>
           <div class="habit-week" id="habitWeekStrip"></div>
           <div id="habitsList"></div>
@@ -4945,6 +4947,15 @@
           this.rawMinutes(habit.id)[dayKey] = habit.defaultMinutes;
         },
 
+        // …and undoing the habit takes it back, or unticking a day leaves time behind that
+        // Calendar and Insights go on counting. Only the untouched default goes: an amount
+        // that no longer matches it is one you typed, and it's yours to remove.
+        clearDefaultTime(habit, dayKey) {
+          if (!this.hasSeparateTime(habit) || !habit.defaultMinutes) return;
+          if (this.rawMinutes(habit.id)[dayKey] !== habit.defaultMinutes) return;
+          delete this.rawMinutes(habit.id)[dayKey];
+        },
+
         // Finishing something should feel like finishing something. Decoration only: it runs
         // after the render that already stored the value, and skips itself if it can't find
         // the row (compact view, a collapsed group) or if motion is unwelcome.
@@ -4983,6 +4994,7 @@
           if (manual) entries[dayKey] = manual; else delete entries[dayKey];   // 0 isn't data, it's absence
           const nowComplete = habitProgress(habit, this.entriesFor(habit), new Date(dayKey + 'T00:00')).complete;
           if (nowComplete && !wasComplete) this.autoLogDefaultTime(habit, dayKey);
+          if (wasComplete && !nowComplete) this.clearDefaultTime(habit, dayKey);
           saveStore();
           this.render();
           if (nowComplete && !wasComplete) this.celebrate(habit);
