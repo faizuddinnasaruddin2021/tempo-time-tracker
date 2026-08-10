@@ -225,7 +225,10 @@ and stepping the window forward past today lands on today rather than refusing t
 Every habit that counts something other than minutes carries a `defaultMinutes` (30 for a
 new one, 0 to switch it off). **Completing the habit logs it once**, in `autoLogDefaultTime()`
 — but only if the day has no time on it yet, hand-logged or from a session, so it can never
-overwrite a real number. It's also what the row's time chip offers, ahead of
+overwrite a real number. Unticking the habit takes it back again (`clearDefaultTime()`),
+and only when the amount still matches the default exactly: anything else is a number you
+typed, and it's yours to remove. Without the symmetry, undoing a habit leaves time behind
+that Calendar and Insights go on counting. It's also what the row's time chip offers, ahead of
 `habitLastMinutes()`: a number you set on purpose beats a guess from history. The point is
 that time gets tracked without anyone remembering to track it, and stays editable after.
 
@@ -236,7 +239,8 @@ screen (compact view, a collapsed group).
 
 ### The compact view
 
-`settings.habitView` (`'full'` / `'compact'`, toggled beside the month label) puts
+`settings.habitView` (`'full'` / `'compact'`, toggled at the top of the view — above the
+cards, because it decides how many of them there are) puts
 `.habits-compact` on the habits view; CSS hides everything marked `.habit-hide-compact` and
 `renderRow()` returns early after the name. One row builder, one week strip, one grid — the
 compact view is the full view with the numbers taken away, not a second list to keep in
