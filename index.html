@@ -2218,6 +2218,46 @@
     }
     .habit-check.on { color: #fff; border-color: transparent; }
 
+    /* Finishing a habit should feel like something. The row pops, its bar flares, and a
+       few sparks in the habit's own colour scatter from the dot. All of it is decoration
+       on top of a render that already happened, so nothing depends on it landing. */
+    @keyframes habit-pop {
+      0% { transform: scale(1); }
+      35% { transform: scale(1.03); }
+      100% { transform: scale(1); }
+    }
+    .habit-line.celebrate { animation: habit-pop 420ms ease; }
+    .habit-line.celebrate .habit-bar-fill { filter: brightness(1.4); box-shadow: 0 0 14px currentColor; }
+    .habit-line.celebrate .habit-check.on,
+    .habit-line.celebrate .habit-day.editing { animation: habit-pop 420ms ease 60ms; }
+
+    @keyframes habit-spark {
+      from { transform: translate(0, 0) scale(1); opacity: 1; }
+      to { transform: translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; }
+    }
+    .habit-spark {
+      position: fixed;
+      width: 7px;
+      height: 7px;
+      margin: -3px 0 0 -3px;
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 999;
+      animation: habit-spark 620ms cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
+    }
+
+    /* Compact view: the same seven-day grid with everything else stripped out — no stats,
+       no steppers, just somewhere to tap the last week in. */
+    .habits-compact .habit-hide-compact { display: none; }
+    .habits-compact .habit-line { grid-template-columns: minmax(110px, 1fr) repeat(7, 42px); }
+    .habits-compact .habit-week { grid-template-columns: minmax(110px, 1fr) repeat(7, 42px) 28px; }
+    .habits-compact .habit-line { padding: 8px 0; }
+    .habits-compact .habit-group-head .habit-meta { display: none; }
+    @media (max-width: 700px) {
+      .habits-compact .habit-line,
+      .habits-compact .habit-week { grid-template-columns: repeat(7, 1fr); }
+    }
+
     /* Narrow: the seven day columns survive, and the name and controls span the full width
        above and below them — the alignment between header and squares is the point. */
     @media (max-width: 700px) {
@@ -2728,7 +2768,7 @@
     <div id="habitsView" class="view active">
       <div class="habits-grid">
         <!-- Quick read on how it's going; the full breakdown lives in Insights -->
-        <div class="card">
+        <div class="card habit-hide-compact">
           <div class="card-title">How It's Going</div>
           <div class="habit-summary-grid" id="habitsOverview"></div>
           <div id="habitsObservations"></div>
@@ -2739,15 +2779,20 @@
             <div class="card-title" id="habitsTodayTitle">Today</div>
             <button class="btn-small primary" id="addHabitBtn" style="margin-bottom: 16px;">+ New habit</button>
           </div>
-          <div class="stat-number" id="habitsDoneCount">0 / 0</div>
-          <div class="stat-label" id="habitsDoneLabel">habits complete today</div>
-          <div class="stacked-bar" id="habitsDoneBar" style="margin-top: 16px;"></div>
+          <div class="habit-hide-compact">
+            <div class="stat-number" id="habitsDoneCount">0 / 0</div>
+            <div class="stat-label" id="habitsDoneLabel">habits complete today</div>
+            <div class="stacked-bar" id="habitsDoneBar" style="margin-top: 16px;"></div>
+          </div>
         </div>
 
         <div class="card">
           <div class="habit-week-header">
             <div class="card-title" id="habitWeekMonth" style="margin: 0;"></div>
-            <button class="btn-small" id="habitWeekToday" style="display: none;">Today</button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <button class="btn-small" id="habitWeekToday" style="display: none;">Today</button>
+              <button class="btn-small" id="habitViewToggle" title="Switch between the full view and a compact one">Compact</button>
+            </div>
           </div>
           <div class="habit-week" id="habitWeekStrip"></div>
           <div id="habitsList"></div>
@@ -3088,6 +3133,13 @@
           <div style="display: flex; gap: 8px;">
             <input type="number" class="form-input" id="habitTarget" min="1" value="1" style="flex: 0 0 90px;">
             <input type="text" class="form-input" id="habitUnit" placeholder="unit (e.g. pages)" autocomplete="off" style="flex: 1;">
+          </div>
+        </div>
+        <div class="form-group" id="habitDefaultMinutesGroup">
+          <label class="form-label">Default time</label>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="number" class="form-input" id="habitDefaultMinutes" min="0" step="5" value="30" style="flex: 0 0 90px;">
+            <span class="insights-note" style="margin: 0;">minutes, logged automatically when you complete this — change it on the row any time</span>
           </div>
         </div>
         <div class="form-group">
@@ -4002,6 +4054,11 @@
         if (typeof h.group !== 'string') h.group = '';   // '' is the ungrouped bucket
       });
       if (!Array.isArray(store.settings.habitCollapsed)) store.settings.habitCollapsed = [];
+      if (store.settings.habitView !== 'compact') store.settings.habitView = 'full';
+      // Habits from before the field default to half an hour, the same as a new one
+      store.habits.forEach(h => {
+        if (!Number.isFinite(h.defaultMinutes)) h.defaultMinutes = h.kind === 'duration' ? 0 : 30;
+      });
 
       if (!Array.isArray(store.axes) || !store.axes.length) store.axes = [{ id: 'group', name: 'Context' }];
 
@@ -4679,14 +4736,17 @@
           return this.selectedDate().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
         },
 
-        // Monday–Sunday, matching habitPeriodDays' weeks and the Insights weekday grid
+        // The last seven days, ending on weekEndDay — a rolling window, not a Mon–Sun
+        // calendar week. "The last 7 days" is the question you actually ask of a habit;
+        // a calendar week answers it with one day of history on a Monday morning.
+        // (habitPeriodDays still uses Mon–Sun; that's a weekly *target*, a different thing.)
+        weekEndDay: habitDayKey(new Date()),
+
         weekDays() {
-          const monday = this.selectedDate();
-          monday.setHours(0, 0, 0, 0);
-          monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+          const end = new Date(this.weekEndDay + 'T00:00');
           return Array.from({ length: 7 }, (_, i) => {
-            const d = new Date(monday);
-            d.setDate(monday.getDate() + i);
+            const d = new Date(end);
+            d.setDate(end.getDate() - 6 + i);
             return d;
           });
         },
@@ -4774,15 +4834,20 @@
         selectDay(key) {
           if (key > habitDayKey(new Date())) return;   // a day that hasn't happened has nothing to log
           this.selectedDay = key;
+          // Selecting a day outside the window (the Today button) brings the window with it
+          if (!this.weekDays().some(d => habitDayKey(d) === key)) this.weekEndDay = key;
           this.render();
         },
 
         shiftWeek(weeks) {
-          const d = this.selectedDate();
-          d.setDate(d.getDate() + weeks * 7);
           const todayKey = habitDayKey(new Date());
+          const end = new Date(this.weekEndDay + 'T00:00');
+          end.setDate(end.getDate() + weeks * 7);
           // Stepping forward past today lands on today rather than refusing to move
-          this.selectedDay = habitDayKey(d) > todayKey ? todayKey : habitDayKey(d);
+          this.weekEndDay = habitDayKey(end) > todayKey ? todayKey : habitDayKey(end);
+          // The selection follows the window rather than pointing off the end of it
+          const days = this.weekDays().map(habitDayKey);
+          if (!days.includes(this.selectedDay)) this.selectedDay = days[days.length - 1];
           this.render();
         },
 
@@ -4864,12 +4929,50 @@
           this.setValue(habit, dayKey, value >= dayTarget ? 0 : dayTarget);
         },
 
-        // Yesterday's session length is the best guess at today's, so it's the chip on offer
+        // What one tap of the time chip logs. The habit's own default wins — it's the
+        // number you set on purpose; the last amount logged is only a guess for habits
+        // that were made before the field existed or had it cleared.
         suggestedMinutes(habit) {
-          return habitLastMinutes(this.minutesFor(habit), this.selectedDay) || 30;
+          return habit.defaultMinutes || habitLastMinutes(this.minutesFor(habit), this.selectedDay) || 30;
+        },
+
+        // Completing a habit logs its default time, once. Anything already on the day —
+        // hand-logged or from a focus session — means the time question is already
+        // answered, so this never overwrites; the row's chip and the detail view still edit it.
+        autoLogDefaultTime(habit, dayKey) {
+          if (!this.hasSeparateTime(habit) || !habit.defaultMinutes) return;
+          if (Math.round(this.minutesFor(habit)[dayKey] || 0)) return;
+          this.rawMinutes(habit.id)[dayKey] = habit.defaultMinutes;
+        },
+
+        // Finishing something should feel like finishing something. Decoration only: it runs
+        // after the render that already stored the value, and skips itself if it can't find
+        // the row (compact view, a collapsed group) or if motion is unwelcome.
+        celebrate(habit) {
+          navigator.vibrate?.(25);
+          if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+          const row = document.querySelector(`.habit-line[data-habit-id="${habit.id}"]`);
+          if (!row) return;
+          row.classList.add('celebrate');
+          setTimeout(() => row.classList.remove('celebrate'), 500);
+
+          const anchor = row.querySelector('.habit-dot') || row;
+          const box = anchor.getBoundingClientRect();
+          for (let i = 0; i < 10; i++) {
+            const angle = (Math.PI * 2 * i) / 10 + Math.random() * 0.6;
+            const distance = 24 + Math.random() * 28;
+            const spark = document.createElement('span');
+            spark.className = 'habit-spark';
+            spark.style.cssText = `left: ${box.left + box.width / 2}px; top: ${box.top + box.height / 2}px;`
+              + `background: ${habit.color}; --dx: ${(Math.cos(angle) * distance).toFixed(1)}px;`
+              + `--dy: ${(Math.sin(angle) * distance).toFixed(1)}px; animation-delay: ${i * 12}ms;`;
+            document.body.appendChild(spark);
+            setTimeout(() => spark.remove(), 800 + i * 12);
+          }
         },
 
         setValue(habit, dayKey, value) {
+          const wasComplete = habitProgress(habit, this.entriesFor(habit), new Date(dayKey + 'T00:00')).complete;
           const v = Math.max(0, Math.round(Number(value) || 0));
           // The control shows the day's *total*, focus minutes included, so store only the
           // hand-logged remainder — otherwise re-typing the number on screen doubles it.
@@ -4878,8 +4981,11 @@
           const manual = habit.kind === 'duration' && habit.catId ? Math.max(0, v - derived) : v;
           const entries = this.rawEntries(habit.id);
           if (manual) entries[dayKey] = manual; else delete entries[dayKey];   // 0 isn't data, it's absence
+          const nowComplete = habitProgress(habit, this.entriesFor(habit), new Date(dayKey + 'T00:00')).complete;
+          if (nowComplete && !wasComplete) this.autoLogDefaultTime(habit, dayKey);
           saveStore();
           this.render();
+          if (nowComplete && !wasComplete) this.celebrate(habit);
         },
 
         setMinutes(habit, dayKey, value) {
@@ -4951,7 +5057,9 @@
             // habits get it too — setMinutes stores only the hand-logged remainder, so you
             // can top up a day the sessions only partly covered.
             if (habit.kind !== 'duration') {
-              const dayKey = habitDayKey(today);
+              // The *selected* day, like everything else on the page. Editing a Tuesday and
+              // having the modal quietly change today's number was the bug this fixes.
+              const dayKey = this.selectedDay;
               const value = Math.round(timeEntries[dayKey] || 0);
               const controls = document.createElement('div');
               controls.className = 'habit-controls';
@@ -4963,7 +5071,10 @@
               });
               input.addEventListener('change', () => this.setMinutes(habit, dayKey, input.value));
               controls.append(
-                Object.assign(document.createElement('span'), { className: 'insights-note', style: 'margin: 0 6px 0 0;', textContent: 'Time today' }),
+                Object.assign(document.createElement('span'), {
+                  className: 'insights-note', style: 'margin: 0 6px 0 0;',
+                  textContent: dayKey === habitDayKey(today) ? 'Time today' : 'Time on ' + this.selectedLabel(),
+                }),
                 minus, input,
               );
               [15, 30, 60].forEach(amount => {
@@ -5036,6 +5147,7 @@
           document.getElementById('habitKind').value = habit?.kind || 'check';
           document.getElementById('habitTarget').value = habit?.target ?? 1;
           document.getElementById('habitUnit').value = habit?.unit || '';
+          document.getElementById('habitDefaultMinutes').value = String(habit?.defaultMinutes ?? 30);
           document.getElementById('habitPeriod').value = habit?.period || 'day';
 
           // The category list is the Focus tab's own — linking here is what stops you
@@ -5075,6 +5187,8 @@
           const group = document.getElementById('habitTargetGroup');
           group.style.display = (kind === 'check' && period === 'day') ? 'none' : '';
           document.getElementById('habitUnit').style.display = kind === 'count' ? '' : 'none';
+          // A minutes habit's target already is its time; a second default would fight it
+          document.getElementById('habitDefaultMinutesGroup').style.display = kind === 'duration' ? 'none' : '';
 
           // Typing a new group name only makes sense once you've asked for one
           const groupSelect = document.getElementById('habitGroup');
@@ -5109,6 +5223,8 @@
             period,
             target: hideTarget ? 1 : Math.max(1, parseInt(document.getElementById('habitTarget').value, 10) || 1),
             unit: kind === 'duration' ? 'min' : (kind === 'count' ? document.getElementById('habitUnit').value.trim() : ''),
+            // 0 turns the automatic logging off without turning the time track off
+            defaultMinutes: kind === 'duration' ? 0 : Math.max(0, parseInt(document.getElementById('habitDefaultMinutes').value, 10) || 0),
             catId: document.getElementById('habitCategory').value,
             group: this.chosenGroup(),
           };
@@ -5149,6 +5265,13 @@
           const selected = this.selectedDate();
           const isToday = this.selectedDay === habitDayKey(new Date());
 
+          // Compact hides the stats rather than rendering a second list: one row builder,
+          // one week strip, and CSS decides how much of it you're looking at.
+          const compact = store.settings.habitView === 'compact';
+          document.getElementById('habitsView')?.classList.toggle('habits-compact', compact);
+          const toggle = document.getElementById('habitViewToggle');
+          if (toggle) toggle.textContent = compact ? 'Full' : 'Compact';
+
           this.renderWeekStrip();
 
           if (!store.habits.length) {
@@ -5165,7 +5288,7 @@
             const entries = this.entriesFor(habit);
             const progress = habitProgress(habit, entries, selected);
             if (progress.complete) complete++;
-            return this.renderRow(habit, entries, progress, selected);
+            return this.renderRow(habit, entries, progress, selected, compact);
           };
 
           const groups = this.groupNames();
@@ -5212,7 +5335,7 @@
           const todayKey = habitDayKey(new Date());
 
           const prev = Object.assign(document.createElement('button'), {
-            className: 'habit-week-nav', textContent: '‹', title: 'Previous week',
+            className: 'habit-week-nav', textContent: '‹', title: 'Back seven days',
           });
           prev.addEventListener('click', () => this.shiftWeek(-1));
           strip.appendChild(prev);
@@ -5246,7 +5369,7 @@
           });
 
           const next = Object.assign(document.createElement('button'), {
-            className: 'habit-week-nav', textContent: '›', title: 'Next week',
+            className: 'habit-week-nav', textContent: '›', title: 'Forward seven days',
           });
           next.disabled = this.weekDays().some(d => habitDayKey(d) === todayKey);
           next.addEventListener('click', () => this.shiftWeek(1));
@@ -5322,9 +5445,10 @@
           return head;
         },
 
-        renderRow(habit, entries, progress, selected) {
+        renderRow(habit, entries, progress, selected, compact) {
           const row = document.createElement('div');
           row.className = 'habit-line' + (progress.complete ? ' done' : '');
+          row.dataset.habitId = habit.id;   // how celebrate() finds the row it just changed
           this.wireDropTarget(row, habit.group || '', habit.id);
 
           const main = document.createElement('div');
@@ -5360,6 +5484,15 @@
           });
           nameBtn.addEventListener('click', () => this.openDetail(habit));
           head.appendChild(nameBtn);
+
+          // Compact stops here: a name and seven squares. Everything below this line is a
+          // number about the habit, and the whole point of the compact view is not having any.
+          if (compact) {
+            main.appendChild(head);
+            row.appendChild(main);
+            this.renderDays(habit, entries).forEach(cell => row.appendChild(cell));
+            return row;
+          }
 
           // Streak and 30-day rate are always "as of now"; only the progress line follows
           // the selected day, because that's the number the controls are about to change.
@@ -8200,6 +8333,11 @@
       });
       document.getElementById('habitWeekToday')?.addEventListener('click', () => {
         ui.habits.selectDay(habitDayKey(new Date()));
+      });
+      document.getElementById('habitViewToggle')?.addEventListener('click', () => {
+        store.settings.habitView = store.settings.habitView === 'compact' ? 'full' : 'compact';
+        saveStore();
+        ui.habits.render();
       });
       document.getElementById('habitKind')?.addEventListener('change', () => ui.habits.syncEditorFields());
       document.getElementById('habitPeriod')?.addEventListener('change', () => ui.habits.syncEditorFields());

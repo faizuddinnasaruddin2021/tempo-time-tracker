@@ -41,7 +41,7 @@ store = {
   axes:       [{ id, name }],              // slicing dimensions — see below
   lens:       { axis: 'group', hidden: { [axisId]: ['Office'] } },
   sessions:   [{ id, start, end, catId, note, taskId }],   // start/end are epoch ms
-  habits:     [{ id, name, color, kind, target, unit, period, catId, group }],
+  habits:     [{ id, name, color, kind, target, unit, period, catId, group, defaultMinutes }],
   habitLog:   { [habitId]: { 'YYYY-MM-DD': number } },
   habitMinutes: { [habitId]: { 'YYYY-MM-DD': number } },   // hand-logged time, when tracked
   tasks:      [{ id, text, pomodoros, done }],
@@ -198,8 +198,18 @@ Four pure functions carry all the arithmetic, extracted by `test.mjs`:
 
 One day is selected for the whole page (`ui.habits.selectedDay`, deliberately not persisted
 — the app should open on today, not on the day you were patching up last night). The week
-header picks it, and every row logs against it. Backfilling is the common case for habits,
-so it shouldn't need a modal, and it shouldn't have to be repeated per habit either.
+header picks it, and every row logs against it — including the time steppers in the habit
+detail modal, which are about the selected day like everything else. Backfilling is the
+common case for habits, so it shouldn't need a modal, and it shouldn't have to be repeated
+per habit either.
+
+The strip is the **last seven days**, ending on `ui.habits.weekEndDay` (today by default),
+not a Mon–Sun calendar week: "how did the last week go" is the question a habit answers, and
+a calendar week answers it with one day of history on a Monday morning. `habitPeriodDays()`
+still uses Mon–Sun — that's a weekly *target*, a different thing, and the two must not be
+conflated. The arrows move the window by seven days and drag the selection along when it
+falls off the end; picking a day outside the window (the Today button) moves the window to
+it.
 
 `.habit-week` and `.habit-line` **share one grid template**, which is why a square sits
 under the date it belongs to — the header is the row's date label, so the squares don't
@@ -208,7 +218,30 @@ an `auto` end column resolved to the width of a nav arrow in the header and to t
 the steppers in a row, sliding the squares out from under their dates.
 
 Future days are disabled everywhere (there's nothing to log on a day that hasn't happened),
-and stepping the week forward past today lands on today rather than refusing to move.
+and stepping the window forward past today lands on today rather than refusing to move.
+
+### Default time, and the reward
+
+Every habit that counts something other than minutes carries a `defaultMinutes` (30 for a
+new one, 0 to switch it off). **Completing the habit logs it once**, in `autoLogDefaultTime()`
+— but only if the day has no time on it yet, hand-logged or from a session, so it can never
+overwrite a real number. It's also what the row's time chip offers, ahead of
+`habitLastMinutes()`: a number you set on purpose beats a guess from history. The point is
+that time gets tracked without anyone remembering to track it, and stays editable after.
+
+`celebrate()` runs *after* the render that already stored the value, finds the row by
+`data-habit-id`, and pops it with a burst of sparks in the habit's colour. It is decoration
+end to end: it stores nothing, and returns early on reduced motion or when the row isn't on
+screen (compact view, a collapsed group).
+
+### The compact view
+
+`settings.habitView` (`'full'` / `'compact'`, toggled beside the month label) puts
+`.habits-compact` on the habits view; CSS hides everything marked `.habit-hide-compact` and
+`renderRow()` returns early after the name. One row builder, one week strip, one grid — the
+compact view is the full view with the numbers taken away, not a second list to keep in
+step. What survives is a name and seven squares to tap, because the reason to want it is
+logging a week quickly without reading a report about it.
 
 A habit's detail view shows the same history as a **calendar** (`renderMonthGrid`) — weekday
 columns, date numbers, month named where one starts — because a row of thirty identical
